@@ -17493,30 +17493,265 @@
         }
 
         function doLogin(){
-            let user = $("#loginUser").val();
+            let user = $("#loginUser").val().trim();
             let pwd = $("#loginPwd").val();
             if(!user || !pwd){
                 alert("请输入用户名和密码");
                 return;
             }
-            $("#loginModal").hide();
-            // 进入游戏
-            initGame();
+            
+            // 使用 Supabase Auth 登录
+            doSupabaseLogin(user, pwd);
+        }
+
+        // Supabase 登录
+        async function doSupabaseLogin(username, password) {
+            try {
+                // 初始化 Supabase 客户端
+                if (!supabaseClient) {
+                    supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+                }
+                
+                // 使用邮箱格式登录（用户名 + @saiboworld.com）
+                const email = username + '@saiboworld.com';
+                
+                const { data, error } = await supabaseClient.auth.signInWithPassword({
+                    email: email,
+                    password: password
+                });
+                
+                if (error) {
+                    if (error.message.includes('Invalid login credentials')) {
+                        alert('用户名或密码错误');
+                    } else {
+                        alert('登录失败: ' + error.message);
+                    }
+                    return;
+                }
+                
+                // 登录成功
+                currentUser = {
+                    id: data.user.id,
+                    username: username,
+                    email: email
+                };
+                
+                // 保存登录状态
+                localStorage.setItem('currentUser', JSON.stringify(currentUser));
+                
+                // 设置在线玩家ID为用户ID
+                onlinePlayerId = data.user.id;
+                
+                $("#loginModal").hide();
+                
+                // 加载本地数据
+                loadGameData();
+                
+                // 检查并下载云端存档
+                await loadUserCloudSave();
+                
+                // 检查离线收益
+                checkOfflineRewards();
+                
+                // 初始化其他系统
+                initDeathSystem();
+                initActivitySystem();
+                initArenaData();
+                checkDailyArenaReward();
+                renderPlayerList();
+                renderInitialMessages();
+                updatePlayerInfo();
+                checkNewUserGiftStatus();
+                checkSignInStatus();
+                initOnlinePlayers();
+                initCloudSave();
+                
+                // 发送欢迎消息
+                setTimeout(() => {
+                    addChatMessage('top', getTime(), '系统', '系统', `🎉 欢迎回来，${gameData.player.name}！`);
+                    addChatMessage('top', getTime(), '系统', '系统', '💡 发送口令【玄铁降临】【神兵强化】【赛博世界无敌】【挂机暴富】可领取福利（每日一次）');
+                }, 500);
+                
+            } catch (e) {
+                console.error('登录失败:', e);
+                alert('登录失败，请稍后重试');
+            }
         }
 
         function doRegister(){
-            let user = $("#regUser").val();
+            let user = $("#regUser").val().trim();
             let pwd = $("#regPwd").val();
             if(!user || !pwd){
                 alert("请完善注册信息");
                 return;
             }
-            alert("注册成功！请登录");
-            backToLogin();
+            if(user.length < 2 || user.length > 12){
+                alert("用户名需要2-12个字符");
+                return;
+            }
+            if(pwd.length < 4){
+                alert("密码至少4个字符");
+                return;
+            }
+            
+            // 使用 Supabase Auth 注册
+            doSupabaseRegister(user, pwd);
+        }
+        
+        // Supabase 注册
+        async function doSupabaseRegister(username, password) {
+            try {
+                // 初始化 Supabase 客户端
+                if (!supabaseClient) {
+                    supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+                }
+                
+                // 使用邮箱格式注册
+                const email = username + '@saiboworld.com';
+                
+                const { data, error } = await supabaseClient.auth.signUp({
+                    email: email,
+                    password: password,
+                    options: {
+                        data: {
+                            username: username
+                        }
+                    }
+                });
+                
+                if (error) {
+                    if (error.message.includes('already registered')) {
+                        alert('该用户名已被注册');
+                    } else {
+                        alert('注册失败: ' + error.message);
+                    }
+                    return;
+                }
+                
+                if (data.user) {
+                    // 注册成功，创建初始存档
+                    currentUser = {
+                        id: data.user.id,
+                        username: username,
+                        email: email
+                    };
+                    
+                    // 保存登录状态
+                    localStorage.setItem('currentUser', JSON.stringify(currentUser));
+                    
+                    // 设置在线玩家ID为用户ID
+                    onlinePlayerId = data.user.id;
+                    
+                    // 设置玩家名称
+                    gameData.player.name = username;
+                    saveGameData();
+                    
+                    // 上传初始存档到云端
+                    await uploadCloudSave();
+                    
+                    alert("注册成功！");
+                    $("#registerModal").hide();
+                    $("#loginModal").show();
+                }
+                
+            } catch (e) {
+                console.error('注册失败:', e);
+                alert('注册失败，请稍后重试');
+            }
+        }
+        
+        // 加载用户云端存档
+        async function loadUserCloudSave() {
+            if (!supabaseClient || !onlinePlayerId) return;
+            
+            try {
+                const { data, error } = await supabaseClient
+                    .from('player_saves')
+                    .select('save_data, updated_at')
+                    .eq('id', onlinePlayerId)
+                    .single();
+                
+                if (error && error.code !== 'PGRST116') {
+                    console.error('加载云端存档失败:', error);
+                    return;
+                }
+                
+                if (data && data.save_data) {
+                    // 比较本地和云端存档时间
+                    const localSaveTime = parseInt(localStorage.getItem('xiajiangGameDataTime') || 0);
+                    const cloudSaveTime = new Date(data.updated_at).getTime();
+                    
+                    // 如果云端更新，使用云端存档
+                    if (cloudSaveTime > localSaveTime) {
+                        const cloudData = data.save_data;
+                        gameData = {
+                            ...gameData,
+                            ...cloudData,
+                            player: {
+                                ...gameData.player,
+                                ...(cloudData.player || {})
+                            }
+                        };
+                        
+                        // 保存到本地
+                        localStorage.setItem('xiajiangGameData', JSON.stringify(gameData));
+                        localStorage.setItem('xiajiangGameDataTime', cloudSaveTime.toString());
+                        
+                        console.log('已从云端加载存档');
+                    }
+                }
+            } catch (e) {
+                console.error('加载云端存档失败:', e);
+            }
         }
         
         // 初始化账号系统（页面加载时只显示登录，不进入游戏）
         async function initAuth() {
+            // 初始化 Supabase 客户端
+            try {
+                supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+                
+                // 检查是否有保存的登录状态
+                const savedUser = localStorage.getItem('currentUser');
+                if (savedUser) {
+                    currentUser = JSON.parse(savedUser);
+                    
+                    // 检查 Supabase 会话
+                    const { data: { session } } = await supabaseClient.auth.getSession();
+                    
+                    if (session && session.user) {
+                        // 会话有效，自动登录
+                        onlinePlayerId = session.user.id;
+                        $("#loginModal").hide();
+                        
+                        // 初始化游戏
+                        loadGameData();
+                        await loadUserCloudSave();
+                        checkOfflineRewards();
+                        initDeathSystem();
+                        initActivitySystem();
+                        initArenaData();
+                        checkDailyArenaReward();
+                        renderPlayerList();
+                        renderInitialMessages();
+                        updatePlayerInfo();
+                        checkNewUserGiftStatus();
+                        checkSignInStatus();
+                        initOnlinePlayers();
+                        initCloudSave();
+                        
+                        setTimeout(() => {
+                            addChatMessage('top', getTime(), '系统', '系统', '💡 发送口令【玄铁降临】【神兵强化】【赛博世界无敌】【挂机暴富】可领取福利（每日一次）');
+                        }, 2000);
+                        
+                        return true;
+                    }
+                }
+            } catch (e) {
+                console.error('初始化认证失败:', e);
+            }
+            
+            // 未登录，显示登录界面
             showLogin();
             return false;
         }
@@ -17529,10 +17764,16 @@
             // 下线
             await goOffline();
             
+            // 登出 Supabase
+            if (supabaseClient) {
+                await supabaseClient.auth.signOut();
+            }
+            
             // 清除本地数据
             localStorage.removeItem('currentUser');
             localStorage.removeItem('onlinePlayerId');
             currentUser = null;
+            onlinePlayerId = null;
             
             // 刷新页面
             location.reload();
@@ -17564,18 +17805,14 @@
         // 初始化在线玩家系统
         function initOnlinePlayers() {
             try {
-                supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+                if (!supabaseClient) {
+                    supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+                }
                 
-                // 使用当前登录用户的ID（如果有）
-                if (currentUser && currentUser.id) {
-                    onlinePlayerId = currentUser.id;
-                } else {
-                    // 未登录时使用本地存储的ID
-                    onlinePlayerId = localStorage.getItem('onlinePlayerId');
-                    if (!onlinePlayerId) {
-                        onlinePlayerId = 'player_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-                        localStorage.setItem('onlinePlayerId', onlinePlayerId);
-                    }
+                // 必须有用户ID才能初始化
+                if (!onlinePlayerId) {
+                    console.error('无法初始化在线系统：缺少用户ID');
+                    return;
                 }
                 
                 // 上线注册
