@@ -17998,6 +17998,286 @@
         }
 
         // ========== 初始化 ==========
+        // ========== 离线挂机系统 ==========
+        const offlineSystem = {
+            // 配置
+            config: {
+                maxOfflineHours: 12,          // 最大离线累积时间（小时）
+                miningIntervalSeconds: 15,     // 挖矿间隔（秒）
+                expPerMinute: 50,              // 每分钟修为基础收益
+                goldPerMinute: 10,             // 每分钟金币基础收益
+                spiritPerMinute: 1,            // 每分钟钻石基础收益
+            },
+            
+            // 离线收益数据
+            offlineRewards: {
+                xuantie: {},      // 玄铁收益 {品级: 数量}
+                xiuyuan: 0,       // 修为收益
+                gold: 0,          // 金币收益
+                spirit: 0,        // 钻石收益
+                offlineMinutes: 0 // 离线时长（分钟）
+            },
+            
+            // 保存离开时间
+            saveLeaveTime() {
+                const leaveData = {
+                    leaveTime: Date.now(),
+                    currentMap: gameData.currentMap || 0,
+                    realmLevel: gameData.realmLevel || 1
+                };
+                localStorage.setItem('saiboworldLeaveTime', JSON.stringify(leaveData));
+                console.log('离开时间已保存:', new Date(leaveData.leaveTime).toLocaleString());
+            },
+            
+            // 计算离线收益
+            calculateOfflineRewards() {
+                const leaveDataStr = localStorage.getItem('saiboworldLeaveTime');
+                if (!leaveDataStr) return null;
+                
+                try {
+                    const leaveData = JSON.parse(leaveDataStr);
+                    const now = Date.now();
+                    const leaveTime = leaveData.leaveTime || 0;
+                    
+                    if (leaveTime <= 0) return null;
+                    
+                    // 计算离线时长（毫秒）
+                    let offlineMs = now - leaveTime;
+                    
+                    // 转换为分钟
+                    let offlineMinutes = Math.floor(offlineMs / (1000 * 60));
+                    
+                    // 限制最大离线时间
+                    const maxMinutes = this.config.maxOfflineHours * 60;
+                    if (offlineMinutes > maxMinutes) {
+                        offlineMinutes = maxMinutes;
+                    }
+                    
+                    // 至少离线1分钟才计算收益
+                    if (offlineMinutes < 1) return null;
+                    
+                    console.log(`离线时长: ${offlineMinutes} 分钟`);
+                    
+                    // 初始化收益
+                    const rewards = {
+                        xuantie: {},
+                        xiuyuan: 0,
+                        gold: 0,
+                        spirit: 0,
+                        offlineMinutes: offlineMinutes,
+                        leaveTime: leaveTime
+                    };
+                    
+                    // 计算玄铁收益（基于挖矿逻辑）
+                    // 每15秒挖一次，所以每分钟挖4次
+                    const mineCount = Math.floor(offlineMinutes * (60 / this.config.miningIntervalSeconds));
+                    
+                    // 玄铁品级概率
+                    const xuantieProb = [55, 25, 10, 6, 2.5, 1, 0.5];
+                    
+                    for (let i = 0; i < mineCount; i++) {
+                        const rand = Math.random() * 100;
+                        let cumulative = 0;
+                        let rankLv = 0;
+                        
+                        for (let j = 0; j < xuantieProb.length; j++) {
+                            cumulative += xuantieProb[j];
+                            if (rand < cumulative) {
+                                rankLv = j;
+                                break;
+                            }
+                        }
+                        
+                        const xuantieNames = ["优秀玄铁", "史诗玄铁", "主宰玄铁", "圣器玄铁", "传说玄铁", "远古玄铁", "洪荒玄铁"];
+                        const name = xuantieNames[rankLv];
+                        rewards.xuantie[name] = (rewards.xuantie[name] || 0) + 1;
+                    }
+                    
+                    // 计算修为收益（根据境界等级加成）
+                    const realmMultiplier = 1 + (leaveData.realmLevel || 1) * 0.2;
+                    rewards.xiuyuan = Math.floor(offlineMinutes * this.config.expPerMinute * realmMultiplier);
+                    
+                    // 计算金币收益
+                    rewards.gold = Math.floor(offlineMinutes * this.config.goldPerMinute * realmMultiplier);
+                    
+                    // 计算钻石收益（概率获得，每10分钟可能获得1个）
+                    rewards.spirit = Math.floor(offlineMinutes / 10);
+                    
+                    // 清除保存的离开时间
+                    localStorage.removeItem('saiboworldLeaveTime');
+                    
+                    return rewards;
+                    
+                } catch (e) {
+                    console.error('计算离线收益失败:', e);
+                    return null;
+                }
+            },
+            
+            // 领取离线收益
+            claimRewards(rewards) {
+                if (!rewards) return false;
+                
+                // 添加玄铁
+                initBagData();
+                for (const [name, count] of Object.entries(rewards.xuantie)) {
+                    const rankLv = ["优秀玄铁", "史诗玄铁", "主宰玄铁", "圣器玄铁", "传说玄铁", "远古玄铁", "洪荒玄铁"].indexOf(name);
+                    const rankName = equipConfig.ranks[rankLv];
+                    const rankColor = equipConfig.rankColors[rankLv];
+                    
+                    const existingMaterial = gameData.bag.materials.find(m => m.name === name);
+                    if (existingMaterial) {
+                        existingMaterial.count = (existingMaterial.count || 1) + count;
+                    } else {
+                        gameData.bag.materials.push({
+                            id: Date.now() + Math.random(),
+                            name: name,
+                            type: 'xuantie',
+                            quality: rankLv,
+                            rankName: rankName,
+                            rankColor: rankColor.color,
+                            count: count,
+                            desc: `${rankName}品质玄铁，可用于修复对应品阶或更高品阶装备的耐久度`
+                        });
+                    }
+                }
+                
+                // 添加修为
+                addXiuyuan(rewards.xiuyuan);
+                
+                // 添加金币
+                gameData.player.silver += rewards.gold;
+                
+                // 添加钻石
+                gameData.player.spirit += rewards.spirit;
+                
+                // 保存数据
+                saveGameData();
+                updatePlayerInfo();
+                
+                return true;
+            },
+            
+            // 显示离线收益弹窗
+            showRewardsModal(rewards) {
+                if (!rewards) return;
+                
+                // 格式化时间
+                const hours = Math.floor(rewards.offlineMinutes / 60);
+                const minutes = rewards.offlineMinutes % 60;
+                const timeStr = hours > 0 ? `${hours}小时${minutes}分钟` : `${minutes}分钟`;
+                
+                // 构建玄铁收益HTML
+                let xuantieHtml = '';
+                const xuantieColors = ['#1eff00', '#a335ee', '#ff8000', '#e6cc80', '#ffd700', '#ff6b6b', '#4ecdc4'];
+                const xuantieNames = ["优秀玄铁", "史诗玄铁", "主宰玄铁", "圣器玄铁", "传说玄铁", "远古玄铁", "洪荒玄铁"];
+                
+                for (let i = 0; i < xuantieNames.length; i++) {
+                    const name = xuantieNames[i];
+                    const count = rewards.xuantie[name] || 0;
+                    if (count > 0) {
+                        xuantieHtml += `<span style="color: ${xuantieColors[i]}; margin: 0 8px;">【${name}】×${count}</span>`;
+                    }
+                }
+                
+                if (!xuantieHtml) xuantieHtml = '<span style="color: #999;">暂无</span>';
+                
+                const modalHtml = `
+                    <div class="gift-modal" id="offlineRewardsModal" style="display: flex; z-index: 10000;">
+                        <div class="modal-content" style="width: 450px; background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); border: 2px solid #D4AF37; border-radius: 16px; padding: 30px; text-align: center;">
+                            <div style="font-size: 28px; margin-bottom: 10px;">🌙</div>
+                            <div style="font-size: 22px; color: #D4AF37; font-weight: bold; margin-bottom: 20px;">离线收益已到账</div>
+                            
+                            <div style="background: rgba(255,255,255,0.1); border-radius: 12px; padding: 20px; margin-bottom: 20px;">
+                                <div style="color: #aaa; font-size: 14px; margin-bottom: 15px;">
+                                    离线时长：<span style="color: #D4AF37; font-size: 18px; font-weight: bold;">${timeStr}</span>
+                                </div>
+                                
+                                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; text-align: left;">
+                                    <div style="background: rgba(0,0,0,0.2); padding: 12px; border-radius: 8px;">
+                                        <div style="color: #aaa; font-size: 12px;">修为</div>
+                                        <div style="color: #4ecdc4; font-size: 20px; font-weight: bold;">+${rewards.xiuyuan.toLocaleString()}</div>
+                                    </div>
+                                    <div style="background: rgba(0,0,0,0.2); padding: 12px; border-radius: 8px;">
+                                        <div style="color: #aaa; font-size: 12px;">金币</div>
+                                        <div style="color: #ffd700; font-size: 20px; font-weight: bold;">+${rewards.gold.toLocaleString()}</div>
+                                    </div>
+                                    <div style="background: rgba(0,0,0,0.2); padding: 12px; border-radius: 8px;">
+                                        <div style="color: #aaa; font-size: 12px;">钻石</div>
+                                        <div style="color: #b19cd9; font-size: 20px; font-weight: bold;">+${rewards.spirit}</div>
+                                    </div>
+                                    <div style="background: rgba(0,0,0,0.2); padding: 12px; border-radius: 8px;">
+                                        <div style="color: #aaa; font-size: 12px;">玄铁总计</div>
+                                        <div style="color: #ff8000; font-size: 20px; font-weight: bold;">${Object.values(rewards.xuantie).reduce((a, b) => a + b, 0)}个</div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div style="background: rgba(212, 175, 55, 0.1); border-radius: 8px; padding: 15px; margin-bottom: 20px;">
+                                <div style="color: #D4AF37; font-size: 14px; margin-bottom: 8px;">💎 玄铁收益明细</div>
+                                <div style="font-size: 13px; line-height: 1.8;">${xuantieHtml}</div>
+                            </div>
+                            
+                            <button onclick="claimOfflineRewards()" style="background: linear-gradient(135deg, #D4AF37 0%, #B8960F 100%); color: white; border: none; padding: 14px 50px; border-radius: 25px; font-size: 16px; font-weight: bold; cursor: pointer; transition: all 0.3s;">
+                                🎁 领取全部
+                            </button>
+                            
+                            <div style="color: #666; font-size: 12px; margin-top: 15px;">
+                                💡 提示：离线最多累积12小时收益
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                // 添加弹窗到页面
+                document.body.insertAdjacentHTML('beforeend', modalHtml);
+                
+                // 保存收益数据供领取使用
+                this.pendingRewards = rewards;
+            },
+            
+            pendingRewards: null
+        };
+        
+        // 领取离线收益的函数
+        function claimOfflineRewards() {
+            if (offlineSystem.pendingRewards) {
+                offlineSystem.claimRewards(offlineSystem.pendingRewards);
+                offlineSystem.pendingRewards = null;
+            }
+            
+            // 关闭弹窗
+            const modal = document.getElementById('offlineRewardsModal');
+            if (modal) modal.remove();
+            
+            // 显示领取成功消息
+            addChatMessage('top', getTime(), '系统', '系统', '【离线收益】🎉 离线收益已成功领取！');
+        }
+        
+        // 页面卸载时保存离开时间
+        window.addEventListener('beforeunload', function() {
+            offlineSystem.saveLeaveTime();
+        });
+        
+        // 页面隐藏时也保存（手机锁屏等情况）
+        document.addEventListener('visibilitychange', function() {
+            if (document.hidden) {
+                offlineSystem.saveLeaveTime();
+            }
+        });
+        
+        // 检查并显示离线收益
+        function checkOfflineRewards() {
+            const rewards = offlineSystem.calculateOfflineRewards();
+            if (rewards && rewards.offlineMinutes >= 1) {
+                // 延迟显示，确保页面已完全加载
+                setTimeout(() => {
+                    offlineSystem.showRewardsModal(rewards);
+                }, 1500);
+            }
+        }
+        
+        // ========== 初始化 ==========
         async function init() {
             // 先初始化Supabase客户端
             try {
@@ -18025,6 +18305,10 @@
             updateUserDisplay();
             
             loadGameData();
+            
+            // 检查离线收益
+            checkOfflineRewards();
+            
             initDeathSystem(); // 初始化死亡系统
             initActivitySystem(); // 初始化活动系统
             initArenaData(); // 初始化竞技场系统
