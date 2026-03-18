@@ -18980,17 +18980,14 @@
             }
         }
 
-        // ========== 实时聊天系统（广播机制）==========
-        let lastChatTime = 0;
-        let chatSyncInterval = null;
+        // ========== 实时聊天系统（WebSocket广播）==========
+        let chatChannel = null;
         let displayedMessageIds = new Set(); // 已显示的消息ID，防止重复
+        let chatInitialized = false;
         
         // 发送消息到云端（广播给所有人）
         async function sendChatToCloud(channel, player, message) {
             const msgId = Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-            
-            // 记录自己发的消息ID，避免重复显示
-            displayedMessageIds.add(msgId);
             
             if (!supabaseClient) {
                 console.warn('Supabase未初始化，消息仅本地显示');
@@ -19012,95 +19009,139 @@
                 if (error) {
                     console.error('发送聊天消息失败:', error);
                 } else {
-                    console.log('消息已广播:', msgId);
+                    console.log('✅ 消息已发送到云端:', msgId);
                 }
             } catch (e) {
                 console.error('发送聊天消息异常:', e);
             }
         }
         
-        // 从云端拉取所有新消息（广播接收）
-        async function fetchNewChatMessages() {
-            if (!supabaseClient) return;
+        // 显示聊天消息
+        function displayChatMessage(msg) {
+            // 用消息ID去重
+            if (displayedMessageIds.has(msg.id)) {
+                return;
+            }
+            displayedMessageIds.add(msg.id);
             
+            // 解析时间
+            const msgTime = new Date(msg.created_at);
+            const timeStr = `${msgTime.getHours().toString().padStart(2, '0')}:${msgTime.getMinutes().toString().padStart(2, '0')}:${msgTime.getSeconds().toString().padStart(2, '0')}`;
+            
+            // 显示消息
+            addChatMessage('top', timeStr, msg.channel, msg.player_name, msg.message);
+            
+            // 清理过期的消息ID记录
+            if (displayedMessageIds.size > 1000) {
+                const idsArray = Array.from(displayedMessageIds);
+                displayedMessageIds = new Set(idsArray.slice(-500));
+            }
+        }
+        
+        // 初始化聊天系统（WebSocket实时订阅）
+        async function initChatSync() {
+            if (chatInitialized) {
+                console.log('聊天系统已初始化，跳过');
+                return;
+            }
+            
+            // 确保 Supabase 客户端已初始化
+            if (!supabaseClient) {
+                try {
+                    supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+                        realtime: {
+                            params: {
+                                eventsPerSecond: 100
+                            }
+                        }
+                    });
+                    console.log('✅ Supabase客户端已初始化（含Realtime）');
+                } catch (e) {
+                    console.error('Supabase初始化失败', e);
+                    return;
+                }
+            }
+            
+            chatInitialized = true;
+            
+            // 先拉取最近的历史消息
             try {
                 const { data, error } = await supabaseClient
                     .from('chat_messages')
                     .select('*')
-                    .gt('created_at', new Date(lastChatTime).toISOString())
+                    .gt('created_at', new Date(Date.now() - 5 * 60 * 1000).toISOString())
                     .order('created_at', { ascending: true })
-                    .limit(100);
-                
-                if (error) {
-                    if (error.code === '42P01') {
-                        console.warn('chat_messages表不存在');
-                        return;
-                    }
-                    console.error('获取聊天消息失败:', error);
-                    return;
-                }
+                    .limit(50);
                 
                 if (data && data.length > 0) {
-                    console.log('收到新消息:', data.length, '条');
-                    
-                    for (const msg of data) {
-                        // 用消息ID去重，避免重复显示
-                        if (displayedMessageIds.has(msg.id)) {
-                            continue;
-                        }
-                        
-                        // 记录已显示的消息ID
-                        displayedMessageIds.add(msg.id);
-                        
-                        // 解析时间
-                        const msgTime = new Date(msg.created_at);
-                        const timeStr = `${msgTime.getHours().toString().padStart(2, '0')}:${msgTime.getMinutes().toString().padStart(2, '0')}:${msgTime.getSeconds().toString().padStart(2, '0')}`;
-                        
-                        // 广播显示给所有用户
-                        addChatMessage('top', timeStr, msg.channel, msg.player_name, msg.message);
-                    }
-                    
-                    // 更新最后消息时间
-                    lastChatTime = new Date(data[data.length - 1].created_at).getTime();
-                    
-                    // 清理过期的消息ID记录（保留最近1000条）
-                    if (displayedMessageIds.size > 1000) {
-                        const idsArray = Array.from(displayedMessageIds);
-                        displayedMessageIds = new Set(idsArray.slice(-500));
-                    }
+                    console.log('📜 加载历史消息:', data.length, '条');
+                    data.forEach(msg => displayChatMessage(msg));
                 }
             } catch (e) {
-                console.error('同步聊天消息异常:', e);
+                console.error('加载历史消息失败:', e);
+            }
+            
+            // 创建 WebSocket 实时订阅
+            try {
+                chatChannel = supabaseClient
+                    .channel('chat-room-global')
+                    .on(
+                        'postgres_changes',
+                        {
+                            event: 'INSERT',
+                            schema: 'public',
+                            table: 'chat_messages'
+                        },
+                        (payload) => {
+                            console.log('🔔 收到实时消息:', payload.new);
+                            displayChatMessage(payload.new);
+                        }
+                    )
+                    .subscribe((status) => {
+                        console.log('📡 聊天室订阅状态:', status);
+                        if (status === 'SUBSCRIBED') {
+                            console.log('✅ 聊天广播系统已启动 - WebSocket实时模式');
+                        } else if (status === 'CHANNEL_ERROR') {
+                            console.error('❌ 聊天室连接失败，启用轮询备用');
+                            // 如果WebSocket失败，启用轮询备用
+                            startPollingBackup();
+                        }
+                    });
+            } catch (e) {
+                console.error('WebSocket订阅失败:', e);
+                // 启用轮询备用
+                startPollingBackup();
             }
         }
         
-        // 初始化聊天同步（独立初始化，不依赖其他系统）
-        function initChatSync() {
-            // 确保 Supabase 客户端已初始化
-            if (!supabaseClient) {
+        // 轮询备用方案
+        let pollingInterval = null;
+        let lastPollTime = Date.now();
+        
+        function startPollingBackup() {
+            if (pollingInterval) return;
+            
+            pollingInterval = setInterval(async () => {
+                if (!supabaseClient) return;
+                
                 try {
-                    supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-                    console.log('聊天系统：Supabase客户端已初始化');
+                    const { data, error } = await supabaseClient
+                        .from('chat_messages')
+                        .select('*')
+                        .gt('created_at', new Date(lastPollTime).toISOString())
+                        .order('created_at', { ascending: true })
+                        .limit(50);
+                    
+                    if (data && data.length > 0) {
+                        data.forEach(msg => displayChatMessage(msg));
+                        lastPollTime = new Date(data[data.length - 1].created_at).getTime();
+                    }
                 } catch (e) {
-                    console.error('聊天系统：Supabase初始化失败', e);
-                    return;
+                    console.error('轮询获取消息失败:', e);
                 }
-            }
+            }, 1000);
             
-            // 防止重复初始化
-            if (chatSyncInterval) {
-                clearInterval(chatSyncInterval);
-            }
-            
-            lastChatTime = Date.now() - 5 * 60 * 1000; // 获取最近5分钟的消息
-            
-            // 每秒同步一次消息（实时广播）
-            chatSyncInterval = setInterval(fetchNewChatMessages, 1000);
-            
-            // 立即获取一次历史消息
-            fetchNewChatMessages();
-            
-            console.log('✅ 聊天广播系统已启动 - 每秒同步');
+            console.log('🔄 轮询备用模式已启动');
         }
 
         // ========== 聊天功能 ==========
