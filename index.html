@@ -17507,10 +17507,11 @@
         // Supabase 登录
         async function doSupabaseLogin(username, password) {
             try {
-                // 显示加载提示
+                // 显示加载提示（不依赖按钮ID）
                 const $loginBtn = $("#loginBtn");
-                const originalText = $loginBtn.text();
-                $loginBtn.text('登录中...').prop('disabled', true);
+                if ($loginBtn.length) {
+                    $loginBtn.text('登录中...').prop('disabled', true);
+                }
                 
                 // 初始化 Supabase 客户端
                 if (!supabaseClient) {
@@ -17526,7 +17527,9 @@
                 });
                 
                 if (error) {
-                    $loginBtn.text(originalText).prop('disabled', false);
+                    if ($loginBtn.length) {
+                        $loginBtn.text('登录').prop('disabled', false);
+                    }
                     if (error.message.includes('Invalid login credentials')) {
                         alert('用户名或密码错误');
                     } else {
@@ -17542,7 +17545,7 @@
                     email: email
                 };
                 localStorage.setItem('currentUser', JSON.stringify(currentUser));
-                localStorage.setItem('lastSessionTime', Date.now().toString()); // 保存会话时间
+                localStorage.setItem('lastSessionTime', Date.now().toString());
                 onlinePlayerId = data.user.id;
                 $("#loginModal").hide();
                 
@@ -17554,16 +17557,15 @@
                 
                 // 后台并行执行网络请求（不阻塞界面）
                 Promise.all([
-                    loadUserCloudSave(),      // 加载云端存档
-                    initOnlinePlayersAsync(), // 上线注册
-                    initCloudSaveAsync()      // 云存档初始化
+                    loadUserCloudSave(),
+                    initOnlinePlayersAsync(),
+                    initCloudSaveAsync()
                 ]).then(() => {
                     console.log('后台数据加载完成');
-                    // 云存档加载后刷新界面
                     updatePlayerInfo();
                 }).catch(e => console.error('后台加载出错:', e));
                 
-                // 其他初始化（本地操作）
+                // 其他初始化
                 initDeathSystem();
                 initActivitySystem();
                 initArenaData();
@@ -17581,7 +17583,10 @@
             } catch (e) {
                 console.error('登录失败:', e);
                 alert('登录失败，请稍后重试');
-                $("#loginBtn").text('登录').prop('disabled', false);
+                const $btn = $("#loginBtn");
+                if ($btn.length) {
+                    $btn.text('登录').prop('disabled', false);
+                }
             }
         }
         
