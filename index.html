@@ -7535,7 +7535,7 @@
 
                 <!-- 中间分隔导航条（1574x37px）-->
                 <div class="nav-tabs-bar">
-                    <button class="nav-tab active">赛博数码世界</button>
+                    <button class="nav-tab active" onclick="openMonsterSiege()" style="color: #ff6b35; font-weight: bold;">🏰 赛博怪物攻城</button>
                     <button class="nav-tab">赛博世界客栈</button>
                     <button class="nav-tab">赛博世界镖局</button>
                     <button class="nav-tab">数码界大会</button>
@@ -19446,8 +19446,722 @@
             }
         });
 
+        // ========== 怪物攻城游戏系统 ==========
+        // 游戏状态
+        let siegeGame = {
+            active: false,
+            mode: null, // 'level' | 'endless' | 'guild'
+            canvas: null,
+            ctx: null,
+            animationId: null,
+            
+            // 玩家数据（完全继承聊天室角色）
+            player: null,
+            
+            // 游戏数据
+            level: 1,          // 当前关卡/波数
+            kills: 0,          // 击杀数
+            monsters: [],      // 怪物数组
+            drops: [],         // 掉落物
+            projectiles: [],   // 飞行物
+            damages: [],       // 伤害数字
+            lastSpawn: 0,      // 上次刷怪时间
+            spawnInterval: 2000, // 刷怪间隔
+            monsterCount: 0,   // 当前波怪物数量
+            maxMonsters: 5,    // 每波最大怪物数
+            waveComplete: false,
+            
+            // 工会副本专用
+            guildPlayers: [],  // 其他在线玩家
+            guildChannel: null // WebSocket频道
+        };
+        
+        // 怪物配置
+        const monsterConfig = {
+            types: [
+                { name: '史莱姆', color: '#4CAF50', baseHp: 50, baseAtk: 5, baseDef: 0, speed: 1, size: 20, exp: 10 },
+                { name: '哥布林', color: '#8BC34A', baseHp: 80, baseAtk: 8, baseDef: 2, speed: 1.5, size: 22, exp: 20 },
+                { name: '骷髅兵', color: '#9E9E9E', baseHp: 120, baseAtk: 12, baseDef: 5, speed: 1.2, size: 24, exp: 30 },
+                { name: '石像鬼', color: '#607D8B', baseHp: 200, baseAtk: 15, baseDef: 10, speed: 0.8, size: 28, exp: 50 },
+                { name: '恶魔', color: '#F44336', baseHp: 300, baseAtk: 25, baseDef: 15, speed: 1.3, size: 30, exp: 80 },
+                { name: '龙骑士', color: '#FF5722', baseHp: 500, baseAtk: 35, baseDef: 20, speed: 1.5, size: 35, exp: 120 },
+                { name: '暗黑领主', color: '#9C27B0', baseHp: 800, baseAtk: 50, baseDef: 30, speed: 1, size: 40, exp: 200 },
+                { name: '毁灭魔王', color: '#E91E63', baseHp: 1500, baseAtk: 80, baseDef: 50, speed: 0.8, size: 50, exp: 500 }
+            ]
+        };
+        
+        // 打开怪物攻城游戏
+        function openMonsterSiege() {
+            document.getElementById('monsterSiegeModal').classList.add('active');
+            
+            // 显示玩家信息
+            const p = gameData.player;
+            const bonus = calculateEquipBonus();
+            document.getElementById('siegePlayerName').textContent = p.name;
+            document.getElementById('siegePlayerHp').textContent = p.maxHp + (bonus.hp || 0);
+            document.getElementById('siegePlayerAtk').textContent = p.attack + (bonus.attack || 0);
+            document.getElementById('siegePlayerDef').textContent = p.defense + (bonus.defense || 0);
+        }
+        
+        // 关闭游戏
+        function closeMonsterSiege() {
+            document.getElementById('monsterSiegeModal').classList.remove('active');
+            stopSiegeGame();
+        }
+        
+        // 初始化游戏玩家数据（完全继承聊天室角色）
+        function initSiegePlayer() {
+            const p = gameData.player;
+            // 计算装备加成
+            const bonus = calculateEquipBonus();
+            
+            siegeGame.player = {
+                name: p.name,
+                x: 100,
+                y: 200,
+                width: 40,
+                height: 60,
+                hp: p.maxHp + (bonus.hp || 0),
+                maxHp: p.maxHp + (bonus.hp || 0),
+                attack: p.attack + (bonus.attack || 0),
+                defense: p.defense + (bonus.defense || 0),
+                crit: p.crit || 0,
+                dodge: p.dodge || 0,
+                speed: 3,
+                attackRange: 150,
+                attackCooldown: 0,
+                maxAttackCooldown: 500, // 攻击间隔ms
+                facing: 1 // 朝向 1右 -1左
+            };
+        }
+        
+        // 开始游戏
+        function startSiegeGame(mode) {
+            siegeGame.mode = mode;
+            siegeGame.active = true;
+            siegeGame.level = 1;
+            siegeGame.kills = 0;
+            siegeGame.monsters = [];
+            siegeGame.drops = [];
+            siegeGame.projectiles = [];
+            siegeGame.damages = [];
+            siegeGame.lastSpawn = Date.now();
+            siegeGame.spawnInterval = 2000;
+            siegeGame.monsterCount = 0;
+            siegeGame.waveComplete = false;
+            
+            // 初始化玩家
+            initSiegePlayer();
+            
+            // 初始化画布
+            siegeGame.canvas = document.getElementById('siegeCanvas');
+            siegeGame.ctx = siegeGame.canvas.getContext('2d');
+            
+            // 显示游戏UI
+            document.getElementById('siegeMenu').style.display = 'none';
+            document.getElementById('siegeGameArea').style.display = 'block';
+            
+            // 工会副本：连接其他玩家
+            if (mode === 'guild') {
+                initGuildSiege();
+            }
+            
+            // 开始游戏循环
+            gameLoop();
+            
+            // 显示提示
+            addChatMessage('top', getTime(), '系统', '系统', `⚔️ ${mode === 'level' ? '闯关' : mode === 'endless' ? '无尽' : '工会副本'}模式开始！`);
+        }
+        
+        // 停止游戏
+        function stopSiegeGame() {
+            siegeGame.active = false;
+            if (siegeGame.animationId) {
+                cancelAnimationFrame(siegeGame.animationId);
+            }
+            if (siegeGame.guildChannel) {
+                siegeGame.guildChannel.unsubscribe();
+                siegeGame.guildChannel = null;
+            }
+        }
+        
+        // 游戏主循环
+        function gameLoop() {
+            if (!siegeGame.active) return;
+            
+            update();
+            render();
+            
+            siegeGame.animationId = requestAnimationFrame(gameLoop);
+        }
+        
+        // 更新游戏状态
+        function update() {
+            const now = Date.now();
+            const p = siegeGame.player;
+            
+            // 更新玩家攻击冷却
+            if (p.attackCooldown > 0) {
+                p.attackCooldown -= 16;
+            }
+            
+            // 自动攻击最近怪物
+            if (siegeGame.monsters.length > 0 && p.attackCooldown <= 0) {
+                let nearestMonster = null;
+                let nearestDist = Infinity;
+                
+                for (const m of siegeGame.monsters) {
+                    const dist = Math.abs(m.x - p.x);
+                    if (dist < nearestDist && dist < p.attackRange) {
+                        nearestDist = dist;
+                        nearestMonster = m;
+                    }
+                }
+                
+                if (nearestMonster) {
+                    playerAttack(nearestMonster);
+                }
+            }
+            
+            // 更新怪物
+            for (let i = siegeGame.monsters.length - 1; i >= 0; i--) {
+                const m = siegeGame.monsters[i];
+                
+                // 怪物向玩家移动
+                const dx = p.x - m.x;
+                const dist = Math.abs(dx);
+                if (dist > 30) {
+                    m.x += (dx > 0 ? 1 : -1) * m.speed;
+                } else {
+                    // 怪物攻击玩家
+                    if (now - m.lastAttack > 1000) {
+                        m.lastAttack = now;
+                        const damage = Math.max(1, m.attack - p.defense);
+                        p.hp -= damage;
+                        showDamage(p.x, p.y - 30, damage, '#ff4444');
+                        
+                        // 检查玩家死亡
+                        if (p.hp <= 0) {
+                            gameOver();
+                            return;
+                        }
+                    }
+                }
+                
+                // 怪物死亡
+                if (m.hp <= 0) {
+                    siegeGame.kills++;
+                    siegeGame.monsters.splice(i, 1);
+                    
+                    // 掉落装备
+                    dropEquipment(m);
+                }
+            }
+            
+            // 更新飞行物
+            for (let i = siegeGame.projectiles.length - 1; i >= 0; i--) {
+                const proj = siegeGame.projectiles[i];
+                proj.x += proj.vx;
+                
+                // 检测命中
+                for (const m of siegeGame.monsters) {
+                    if (Math.abs(proj.x - m.x) < m.size && Math.abs(proj.y - m.y) < m.size) {
+                        const damage = Math.max(1, proj.damage - m.defense);
+                        m.hp -= damage;
+                        showDamage(m.x, m.y - 20, damage, '#ffcc00');
+                        siegeGame.projectiles.splice(i, 1);
+                        break;
+                    }
+                }
+                
+                // 移除超出画布的飞行物
+                if (proj.x > siegeGame.canvas.width || proj.x < 0) {
+                    siegeGame.projectiles.splice(i, 1);
+                }
+            }
+            
+            // 更新伤害数字
+            for (let i = siegeGame.damages.length - 1; i >= 0; i--) {
+                const d = siegeGame.damages[i];
+                d.y -= 1;
+                d.alpha -= 0.02;
+                if (d.alpha <= 0) {
+                    siegeGame.damages.splice(i, 1);
+                }
+            }
+            
+            // 更新掉落物
+            for (let i = siegeGame.drops.length - 1; i >= 0; i--) {
+                const drop = siegeGame.drops[i];
+                drop.y += 1;
+                drop.alpha -= 0.01;
+                
+                // 检测玩家拾取
+                if (Math.abs(drop.x - p.x) < 50 && Math.abs(drop.y - p.y) < 50) {
+                    // 添加到背包
+                    gameData.inventory.push(drop.equip);
+                    saveGameData();
+                    addChatMessage('bottom', getTime(), '系统', '系统', `【掉落】获得 ${drop.equip.name}！`);
+                    siegeGame.drops.splice(i, 1);
+                    continue;
+                }
+                
+                if (drop.alpha <= 0 || drop.y > siegeGame.canvas.height) {
+                    siegeGame.drops.splice(i, 1);
+                }
+            }
+            
+            // 刷怪逻辑
+            if (now - siegeGame.lastSpawn > siegeGame.spawnInterval) {
+                if (siegeGame.monsterCount < siegeGame.maxMonsters) {
+                    spawnMonster();
+                    siegeGame.lastSpawn = now;
+                }
+            }
+            
+            // 检查波次/关卡完成
+            if (siegeGame.monsters.length === 0 && siegeGame.monsterCount >= siegeGame.maxMonsters) {
+                nextWave();
+            }
+            
+            // 更新UI
+            updateSiegeUI();
+        }
+        
+        // 玩家攻击
+        function playerAttack(monster) {
+            const p = siegeGame.player;
+            p.attackCooldown = p.maxAttackCooldown;
+            p.facing = monster.x > p.x ? 1 : -1;
+            
+            // 创建飞行物
+            siegeGame.projectiles.push({
+                x: p.x + p.width / 2,
+                y: p.y,
+                vx: p.facing * 8,
+                damage: p.attack,
+                color: '#00ffff'
+            });
+        }
+        
+        // 显示伤害数字
+        function showDamage(x, y, damage, color) {
+            siegeGame.damages.push({
+                x: x,
+                y: y,
+                damage: damage,
+                color: color,
+                alpha: 1
+            });
+        }
+        
+        // 生成怪物
+        function spawnMonster() {
+            const level = siegeGame.level;
+            const mode = siegeGame.mode;
+            
+            // 根据模式计算怪物强度
+            let difficulty = level;
+            if (mode === 'endless') {
+                difficulty = Math.floor(level * 1.2);
+            }
+            
+            // 选择怪物类型
+            const typeIndex = Math.min(Math.floor(difficulty / 3), monsterConfig.types.length - 1);
+            const type = monsterConfig.types[Math.floor(Math.random() * (typeIndex + 1))];
+            
+            // 计算怪物属性
+            const mult = 1 + difficulty * 0.3;
+            const monster = {
+                x: siegeGame.canvas.width + 50,
+                y: 150 + Math.random() * 100,
+                name: type.name,
+                hp: Math.floor(type.baseHp * mult),
+                maxHp: Math.floor(type.baseHp * mult),
+                attack: Math.floor(type.baseAtk * mult),
+                defense: Math.floor(type.baseDef * mult),
+                speed: type.speed + difficulty * 0.05,
+                size: type.size,
+                color: type.color,
+                exp: Math.floor(type.exp * mult),
+                lastAttack: 0
+            };
+            
+            siegeGame.monsters.push(monster);
+            siegeGame.monsterCount++;
+            
+            // 工会副本：同步怪物
+            if (mode === 'guild' && siegeGame.guildChannel) {
+                syncMonsterToGuild(monster);
+            }
+        }
+        
+        // 掉落装备
+        function dropEquipment(monster) {
+            // 30%概率掉落
+            if (Math.random() > 0.3) return;
+            
+            // 获取装备类型
+            const types = ['weapon', 'armor', 'helmet', 'ring', 'necklace', 'bracer', 'bracelet'];
+            const type = types[Math.floor(Math.random() * types.length)];
+            
+            // 根据怪物强度生成装备
+            const level = siegeGame.level;
+            const equip = createEquipByLevel(type, level);
+            
+            siegeGame.drops.push({
+                x: monster.x,
+                y: monster.y,
+                equip: equip,
+                alpha: 1
+            });
+        }
+        
+        // 根据等级创建装备
+        function createEquipByLevel(type, level) {
+            // 复用现有装备系统
+            const baseEquip = createEquip(type);
+            // 根据等级提升属性
+            const mult = 1 + level * 0.1;
+            for (const key in baseEquip.stats) {
+                baseEquip.stats[key] = Math.floor(baseEquip.stats[key] * mult);
+            }
+            return baseEquip;
+        }
+        
+        // 下一波
+        function nextWave() {
+            if (siegeGame.mode === 'level') {
+                // 闯关模式：进入下一关
+                siegeGame.level++;
+                siegeGame.monsterCount = 0;
+                siegeGame.maxMonsters = 5 + siegeGame.level;
+                siegeGame.spawnInterval = Math.max(500, 2000 - siegeGame.level * 100);
+                
+                addChatMessage('top', getTime(), '系统', '系统', `🏆 第${siegeGame.level - 1}关通关！进入第${siegeGame.level}关！`);
+            } else if (siegeGame.mode === 'endless') {
+                // 无尽模式：继续下一波
+                siegeGame.level++;
+                siegeGame.monsterCount = 0;
+                siegeGame.maxMonsters = 5 + Math.floor(siegeGame.level / 2);
+            }
+        }
+        
+        // 游戏结束
+        function gameOver() {
+            siegeGame.active = false;
+            
+            const modeText = siegeGame.mode === 'level' ? `闯关模式 - 第${siegeGame.level}关` : 
+                            siegeGame.mode === 'endless' ? `无尽模式 - 第${siegeGame.level}波` : 
+                            '工会副本';
+            
+            addChatMessage('top', getTime(), '系统', '系统', `💀 ${modeText}结束！击杀: ${siegeGame.kills}`);
+            
+            // 显示结算界面
+            document.getElementById('siegeResult').style.display = 'block';
+            document.getElementById('resultTitle').textContent = '游戏结束';
+            document.getElementById('resultStats').innerHTML = `
+                <p>模式：${modeText}</p>
+                <p>击杀数：${siegeGame.kills}</p>
+                <p>最高波数：${siegeGame.level}</p>
+            `;
+        }
+        
+        // 更新UI显示
+        function updateSiegeUI() {
+            const p = siegeGame.player;
+            document.getElementById('siegeHp').textContent = `${Math.max(0, Math.floor(p.hp))}/${p.maxHp}`;
+            document.getElementById('siegeHpBar').style.width = `${Math.max(0, (p.hp / p.maxHp) * 100)}%`;
+            document.getElementById('siegeLevel').textContent = siegeGame.mode === 'level' ? `第${siegeGame.level}关` : `第${siegeGame.level}波`;
+            document.getElementById('siegeKills').textContent = siegeGame.kills;
+            document.getElementById('siegeMode').textContent = siegeGame.mode === 'level' ? '闯关模式' : 
+                                                                siegeGame.mode === 'endless' ? '无尽模式' : '工会副本';
+        }
+        
+        // 渲染游戏
+        function render() {
+            const ctx = siegeGame.ctx;
+            const canvas = siegeGame.canvas;
+            
+            // 清空画布
+            ctx.fillStyle = '#1a1a2e';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // 绘制地面
+            ctx.fillStyle = '#2d2d44';
+            ctx.fillRect(0, canvas.height - 50, canvas.width, 50);
+            
+            // 绘制玩家
+            const p = siegeGame.player;
+            ctx.save();
+            ctx.translate(p.x, p.y);
+            if (p.facing < 0) ctx.scale(-1, 1);
+            
+            // 身体
+            ctx.fillStyle = '#4fc3f7';
+            ctx.fillRect(-p.width/2, -p.height, p.width, p.height);
+            
+            // 头
+            ctx.fillStyle = '#fff';
+            ctx.beginPath();
+            ctx.arc(0, -p.height - 15, 15, 0, Math.PI * 2);
+            ctx.fill();
+            
+            ctx.restore();
+            
+            // 绘制血条
+            ctx.fillStyle = '#333';
+            ctx.fillRect(p.x - 25, p.y - p.height - 40, 50, 8);
+            ctx.fillStyle = '#4caf50';
+            ctx.fillRect(p.x - 25, p.y - p.height - 40, 50 * (p.hp / p.maxHp), 8);
+            
+            // 绘制玩家名字
+            ctx.fillStyle = '#fff';
+            ctx.font = '12px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText(p.name, p.x, p.y - p.height - 45);
+            
+            // 绘制怪物
+            for (const m of siegeGame.monsters) {
+                ctx.fillStyle = m.color;
+                ctx.beginPath();
+                ctx.arc(m.x, m.y, m.size, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // 怪物血条
+                ctx.fillStyle = '#333';
+                ctx.fillRect(m.x - m.size, m.y - m.size - 15, m.size * 2, 6);
+                ctx.fillStyle = '#f44336';
+                ctx.fillRect(m.x - m.size, m.y - m.size - 15, m.size * 2 * (m.hp / m.maxHp), 6);
+                
+                // 怪物名字
+                ctx.fillStyle = '#fff';
+                ctx.font = '10px Arial';
+                ctx.fillText(m.name, m.x, m.y - m.size - 20);
+            }
+            
+            // 绘制飞行物
+            for (const proj of siegeGame.projectiles) {
+                ctx.fillStyle = proj.color;
+                ctx.beginPath();
+                ctx.arc(proj.x, proj.y, 5, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            
+            // 绘制伤害数字
+            for (const d of siegeGame.damages) {
+                ctx.fillStyle = `rgba(255, 255, 255, ${d.alpha})`;
+                ctx.font = 'bold 16px Arial';
+                ctx.fillText(d.damage, d.x, d.y);
+            }
+            
+            // 绘制掉落物
+            for (const drop of siegeGame.drops) {
+                ctx.fillStyle = `rgba(255, 215, 0, ${drop.alpha})`;
+                ctx.font = '20px Arial';
+                ctx.fillText('📦', drop.x, drop.y);
+            }
+            
+            // 工会副本：绘制其他玩家
+            for (const gp of siegeGame.guildPlayers) {
+                ctx.fillStyle = gp.color || '#9c27b0';
+                ctx.fillRect(gp.x - 20, gp.y - 60, 40, 60);
+                ctx.fillStyle = '#fff';
+                ctx.font = '10px Arial';
+                ctx.fillText(gp.name, gp.x, gp.y - 65);
+            }
+        }
+        
+        // 工会副本：初始化联机
+        async function initGuildSiege() {
+            if (!gameData.guild || !gameData.guild.id) {
+                alert('您还未加入工会！');
+                stopSiegeGame();
+                return;
+            }
+            
+            if (!supabaseClient) {
+                alert('网络连接失败！');
+                stopSiegeGame();
+                return;
+            }
+            
+            // 订阅工会副本频道
+            siegeGame.guildChannel = supabaseClient
+                .channel(`guild_siege_${gameData.guild.id}`)
+                .on('broadcast', { event: 'player_sync' }, ({ payload }) => {
+                    // 更新其他玩家位置
+                    const idx = siegeGame.guildPlayers.findIndex(p => p.id === payload.id);
+                    if (idx >= 0) {
+                        siegeGame.guildPlayers[idx] = payload;
+                    } else {
+                        siegeGame.guildPlayers.push(payload);
+                    }
+                })
+                .on('broadcast', { event: 'monster_sync' }, ({ payload }) => {
+                    // 同步怪物
+                    if (!siegeGame.monsters.find(m => m.id === payload.id)) {
+                        siegeGame.monsters.push(payload);
+                    }
+                })
+                .subscribe();
+            
+            // 定期同步自己的状态
+            setInterval(() => {
+                if (siegeGame.active && siegeGame.guildChannel) {
+                    siegeGame.guildChannel.send({
+                        type: 'broadcast',
+                        event: 'player_sync',
+                        payload: {
+                            id: onlinePlayerId,
+                            name: siegeGame.player.name,
+                            x: siegeGame.player.x,
+                            y: siegeGame.player.y,
+                            hp: siegeGame.player.hp,
+                            color: '#9c27b0'
+                        }
+                    });
+                }
+            }, 100);
+        }
+        
+        // 同步怪物到工会
+        function syncMonsterToGuild(monster) {
+            if (siegeGame.guildChannel) {
+                siegeGame.guildChannel.send({
+                    type: 'broadcast',
+                    event: 'monster_sync',
+                    payload: { ...monster, id: Date.now() + Math.random() }
+                });
+            }
+        }
+        
+        // 重新开始游戏
+        function restartSiegeGame() {
+            document.getElementById('siegeResult').style.display = 'none';
+            startSiegeGame(siegeGame.mode);
+        }
+        
+        // 返回菜单
+        function backToSiegeMenu() {
+            document.getElementById('siegeResult').style.display = 'none';
+            document.getElementById('siegeGameArea').style.display = 'none';
+            document.getElementById('siegeMenu').style.display = 'block';
+            stopSiegeGame();
+        }
+
         // 初始化
         init();
     </script>
+    
+    <!-- 怪物攻城游戏弹窗 -->
+    <div id="monsterSiegeModal" class="modal">
+        <div class="modal-content" style="width: 900px; max-width: 95%; background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); border: 2px solid #0f3460;">
+            <!-- 标题栏 -->
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 15px 20px; border-bottom: 1px solid #0f3460;">
+                <h3 style="color: #ff6b35; margin: 0; font-size: 20px;">🏰 赛博怪物攻城</h3>
+                <button onclick="closeMonsterSiege()" style="background: none; border: none; color: #888; font-size: 24px; cursor: pointer;">&times;</button>
+            </div>
+            
+            <!-- 游戏菜单 -->
+            <div id="siegeMenu" style="padding: 30px;">
+                <div style="text-align: center; margin-bottom: 30px;">
+                    <div style="color: #4fc3f7; font-size: 16px; margin-bottom: 10px;">当前角色</div>
+                    <div style="color: #fff; font-size: 18px; font-weight: bold;" id="siegePlayerName"></div>
+                    <div style="color: #888; font-size: 14px; margin-top: 5px;">
+                        血量: <span id="siegePlayerHp">100</span> | 
+                        攻击: <span id="siegePlayerAtk">10</span> | 
+                        防御: <span id="siegePlayerDef">5</span>
+                    </div>
+                </div>
+                
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px;">
+                    <!-- 闯关模式 -->
+                    <div onclick="startSiegeGame('level')" style="background: linear-gradient(135deg, #1e3a5f 0%, #0f3460 100%); border-radius: 12px; padding: 25px; text-align: center; cursor: pointer; transition: transform 0.2s;" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
+                        <div style="font-size: 40px; margin-bottom: 10px;">⚔️</div>
+                        <div style="color: #4fc3f7; font-size: 18px; font-weight: bold; margin-bottom: 8px;">闯关模式</div>
+                        <div style="color: #888; font-size: 12px; line-height: 1.5;">
+                            难度递增<br>
+                            通关解锁下一关<br>
+                            装备奖励丰富
+                        </div>
+                    </div>
+                    
+                    <!-- 无尽模式 -->
+                    <div onclick="startSiegeGame('endless')" style="background: linear-gradient(135deg, #3d1a1a 0%, #5f1e1e 100%); border-radius: 12px; padding: 25px; text-align: center; cursor: pointer; transition: transform 0.2s;" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
+                        <div style="font-size: 40px; margin-bottom: 10px;">♾️</div>
+                        <div style="color: #ff6b6b; font-size: 18px; font-weight: bold; margin-bottom: 8px;">无尽模式</div>
+                        <div style="color: #888; font-size: 12px; line-height: 1.5;">
+                            无限波次<br>
+                            怪物越来越强<br>
+                            挑战生存极限
+                        </div>
+                    </div>
+                    
+                    <!-- 工会副本 -->
+                    <div onclick="startSiegeGame('guild')" style="background: linear-gradient(135deg, #2a1a3d 0%, #4a1a5f 100%); border-radius: 12px; padding: 25px; text-align: center; cursor: pointer; transition: transform 0.2s;" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
+                        <div style="font-size: 40px; margin-bottom: 10px;">👥</div>
+                        <div style="color: #b388ff; font-size: 18px; font-weight: bold; margin-bottom: 8px;">工会副本</div>
+                        <div style="color: #888; font-size: 12px; line-height: 1.5;">
+                            工会成员同屏<br>
+                            共同打怪守城<br>
+                            BOSS级奖励
+                        </div>
+                    </div>
+                </div>
+                
+                <div style="text-align: center; margin-top: 25px; color: #666; font-size: 12px;">
+                    💡 提示：角色属性完全继承聊天室当前数据，击杀怪物可获得装备掉落！
+                </div>
+            </div>
+            
+            <!-- 游戏区域 -->
+            <div id="siegeGameArea" style="display: none; padding: 15px;">
+                <!-- 游戏状态栏 -->
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px; background: rgba(0,0,0,0.3); border-radius: 8px; margin-bottom: 10px;">
+                    <div style="display: flex; gap: 20px;">
+                        <div>
+                            <span style="color: #888; font-size: 12px;">血量</span>
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <div style="width: 100px; height: 8px; background: #333; border-radius: 4px; overflow: hidden;">
+                                    <div id="siegeHpBar" style="width: 100%; height: 100%; background: linear-gradient(90deg, #4caf50, #8bc34a); transition: width 0.3s;"></div>
+                                </div>
+                                <span id="siegeHp" style="color: #4caf50; font-size: 14px;">100/100</span>
+                            </div>
+                        </div>
+                        <div>
+                            <span style="color: #888; font-size: 12px;">关卡/波数</span>
+                            <div id="siegeLevel" style="color: #ffcc00; font-size: 16px; font-weight: bold;">第1关</div>
+                        </div>
+                        <div>
+                            <span style="color: #888; font-size: 12px;">击杀</span>
+                            <div id="siegeKills" style="color: #ff6b6b; font-size: 16px; font-weight: bold;">0</div>
+                        </div>
+                    </div>
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        <span id="siegeMode" style="color: #4fc3f7; font-size: 14px; padding: 4px 12px; background: rgba(79, 195, 247, 0.2); border-radius: 12px;">闯关模式</span>
+                        <button onclick="backToSiegeMenu()" style="padding: 6px 16px; background: #333; border: none; color: #fff; border-radius: 4px; cursor: pointer;">退出</button>
+                    </div>
+                </div>
+                
+                <!-- 游戏画布 -->
+                <canvas id="siegeCanvas" width="860" height="350" style="background: #1a1a2e; border-radius: 8px; display: block;"></canvas>
+                
+                <div style="text-align: center; margin-top: 10px; color: #666; font-size: 12px;">
+                    🎮 角色自动攻击范围内怪物，怪物掉落装备自动进入背包
+                </div>
+            </div>
+            
+            <!-- 结算界面 -->
+            <div id="siegeResult" style="display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.9); padding: 40px; border-radius: 16px; text-align: center; z-index: 100;">
+                <div id="resultTitle" style="color: #ff6b6b; font-size: 28px; font-weight: bold; margin-bottom: 20px;">游戏结束</div>
+                <div id="resultStats" style="color: #fff; font-size: 16px; line-height: 2;"></div>
+                <div style="margin-top: 25px; display: flex; gap: 15px; justify-content: center;">
+                    <button onclick="restartSiegeGame()" style="padding: 12px 30px; background: linear-gradient(135deg, #4caf50, #8bc34a); border: none; color: #fff; font-size: 16px; border-radius: 8px; cursor: pointer;">再来一次</button>
+                    <button onclick="backToSiegeMenu()" style="padding: 12px 30px; background: #333; border: none; color: #fff; font-size: 16px; border-radius: 8px; cursor: pointer;">返回菜单</button>
+                </div>
+            </div>
+        </div>
+    </div>
 </body>
 </html>
