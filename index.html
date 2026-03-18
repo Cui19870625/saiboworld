@@ -5375,21 +5375,43 @@
         .change-name-content {
             background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
             border: 2px solid #D4AF37;
-            border-radius: 12px;
-            padding: 25px;
-            width: 320px;
-            box-shadow: 0 8px 32px rgba(212, 175, 55, 0.4);
+            border-radius: 16px;
+            padding: 30px;
+            width: 380px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5), 0 8px 32px rgba(212, 175, 55, 0.3);
             position: relative;
+            animation: modalSlideIn 0.3s ease;
+        }
+
+        @keyframes modalSlideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-20px) scale(0.95);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+
+        #changeNameModal {
+            align-items: center !important;
+            justify-content: center !important;
+            padding-top: 0 !important;
         }
 
         .change-name-title {
-            font-size: 18px;
+            font-size: 20px;
             color: #D4AF37;
             text-align: center;
             font-weight: bold;
-            margin-bottom: 20px;
-            padding-bottom: 10px;
+            margin-bottom: 25px;
+            padding-bottom: 15px;
             border-bottom: 1px solid rgba(212, 175, 55, 0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
         }
 
         .change-name-form {
@@ -5399,26 +5421,28 @@
         }
 
         .change-name-label {
-            font-size: 13px;
+            font-size: 14px;
             color: #aaa;
             text-align: center;
         }
 
         .change-name-input {
             width: 100%;
-            padding: 12px 15px;
+            padding: 14px 18px;
             background: rgba(255, 255, 255, 0.08);
             border: 1px solid rgba(212, 175, 55, 0.3);
-            border-radius: 8px;
+            border-radius: 10px;
             color: #fff;
-            font-size: 14px;
+            font-size: 16px;
             outline: none;
             transition: all 0.2s;
+            text-align: center;
         }
 
         .change-name-input:focus {
             border-color: #D4AF37;
             background: rgba(255, 255, 255, 0.12);
+            box-shadow: 0 0 15px rgba(212, 175, 55, 0.2);
         }
 
         .change-name-input::placeholder {
@@ -5428,26 +5452,34 @@
         .change-name-tips {
             display: flex;
             flex-direction: column;
-            gap: 5px;
-            padding: 10px;
+            gap: 6px;
+            padding: 12px 15px;
             background: rgba(255, 255, 255, 0.03);
-            border-radius: 6px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
         }
 
         .change-name-tips span {
-            font-size: 11px;
+            font-size: 12px;
             color: #888;
+            padding-left: 5px;
+        }
+
+        .change-name-tips span::before {
+            content: '•';
+            margin-right: 6px;
+            color: #D4AF37;
         }
 
         .change-name-btns {
             display: flex;
-            gap: 10px;
-            margin-top: 5px;
+            gap: 12px;
+            margin-top: 10px;
         }
 
         .change-name-btn {
             flex: 1;
-            padding: 10px;
+            padding: 12px;
             border: none;
             border-radius: 6px;
             font-size: 14px;
@@ -5471,8 +5503,37 @@
         }
 
         .change-name-btn.confirm-btn:hover {
-            transform: scale(1.02);
-            box-shadow: 0 4px 12px rgba(212, 175, 55, 0.4);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(212, 175, 55, 0.4);
+        }
+
+        .change-name-btn.cancel-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+            color: #fff;
+        }
+
+        /* 关闭按钮样式 */
+        #changeNameModal .modal-close-btn {
+            position: absolute;
+            top: 12px;
+            right: 15px;
+            width: 32px;
+            height: 32px;
+            background: rgba(255, 255, 255, 0.1);
+            border: none;
+            border-radius: 50%;
+            color: #888;
+            font-size: 20px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+        }
+
+        #changeNameModal .modal-close-btn:hover {
+            background: rgba(255, 100, 100, 0.3);
+            color: #ff6b6b;
         }
 
         /* 藏宝阁面板样式 - 统一地图/锻造风格 */
@@ -7334,7 +7395,7 @@
           <input id="loginUser" type="text" placeholder="用户名" style="width:100%;height:21px;background:#f5f5f5;border:1px solid #ddd;border-radius:2px;padding:0 7px;font-size:10px;margin-bottom:6px;outline:none;">
           <input id="loginPwd" type="password" placeholder="密码" style="width:100%;height:21px;background:#f5f5f5;border:1px solid #ddd;border-radius:2px;padding:0 7px;font-size:10px;margin-bottom:12px;outline:none;">
           <div style="display:flex;gap:6px;">
-            <button id="loginBtn" onclick="doLogin()" style="flex:1;height:21px;background:#000;color:#fff;border:none;border-radius:2px;font-size:10px;">登录</button>
+            <button onclick="doLogin()" style="flex:1;height:21px;background:#000;color:#fff;border:none;border-radius:2px;font-size:10px;">登录</button>
             <button onclick="goToRegister()" style="flex:1;height:21px;background:#fff;color:#000;border:1px solid #999;border-radius:2px;font-size:10px;">注册</button>
           </div>
         </div>
@@ -7350,7 +7411,7 @@
           <input id="regUser" type="text" placeholder="用户名" style="width:100%;height:21px;background:#f5f5f5;border:1px solid #ddd;border-radius:2px;padding:0 7px;font-size:10px;margin-bottom:6px;outline:none;">
           <input id="regPwd" type="password" placeholder="密码" style="width:100%;height:21px;background:#f5f5f5;border:1px solid #ddd;border-radius:2px;padding:0 7px;font-size:10px;margin-bottom:12px;outline:none;">
           <div style="display:flex;gap:6px;">
-            <button id="regBtn" onclick="doRegister()" style="flex:1;height:21px;background:#000;color:#fff;border:none;border-radius:2px;font-size:10px;">确认注册</button>
+            <button onclick="doRegister()" style="flex:1;height:21px;background:#000;color:#fff;border:none;border-radius:2px;font-size:10px;">确认注册</button>
             <button onclick="backToLogin()" style="flex:1;height:21px;background:#fff;color:#000;border:1px solid #999;border-radius:2px;font-size:10px;">返回</button>
           </div>
         </div>
@@ -17507,12 +17568,6 @@
         // Supabase 登录
         async function doSupabaseLogin(username, password) {
             try {
-                // 显示加载提示（不依赖按钮ID）
-                const $loginBtn = $("#loginBtn");
-                if ($loginBtn.length) {
-                    $loginBtn.text('登录中...').prop('disabled', true);
-                }
-                
                 // 初始化 Supabase 客户端
                 if (!supabaseClient) {
                     supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -17527,9 +17582,6 @@
                 });
                 
                 if (error) {
-                    if ($loginBtn.length) {
-                        $loginBtn.text('登录').prop('disabled', false);
-                    }
                     if (error.message.includes('Invalid login credentials')) {
                         alert('用户名或密码错误');
                     } else {
@@ -17538,101 +17590,52 @@
                     return;
                 }
                 
-                // 登录成功 - 立即关闭登录框
+                // 登录成功
                 currentUser = {
                     id: data.user.id,
                     username: username,
                     email: email
                 };
+                
+                // 保存登录状态
                 localStorage.setItem('currentUser', JSON.stringify(currentUser));
-                localStorage.setItem('lastSessionTime', Date.now().toString());
+                
+                // 设置在线玩家ID为用户ID
                 onlinePlayerId = data.user.id;
+                
                 $("#loginModal").hide();
                 
-                // 立即加载本地数据并显示游戏界面
+                // 加载本地数据
                 loadGameData();
-                renderPlayerList();
-                renderInitialMessages();
-                updatePlayerInfo();
                 
-                // 后台并行执行网络请求（不阻塞界面）
-                Promise.all([
-                    loadUserCloudSave(),
-                    initOnlinePlayersAsync(),
-                    initCloudSaveAsync()
-                ]).then(() => {
-                    console.log('后台数据加载完成');
-                    updatePlayerInfo();
-                }).catch(e => console.error('后台加载出错:', e));
+                // 检查并下载云端存档
+                await loadUserCloudSave();
                 
-                // 其他初始化
+                // 检查离线收益
+                checkOfflineRewards();
+                
+                // 初始化其他系统
                 initDeathSystem();
                 initActivitySystem();
                 initArenaData();
                 checkDailyArenaReward();
+                renderPlayerList();
+                renderInitialMessages();
+                updatePlayerInfo();
                 checkNewUserGiftStatus();
                 checkSignInStatus();
-                checkOfflineRewards();
+                initOnlinePlayers();
+                initCloudSave();
                 
                 // 发送欢迎消息
                 setTimeout(() => {
                     addChatMessage('top', getTime(), '系统', '系统', `🎉 欢迎回来，${gameData.player.name}！`);
                     addChatMessage('top', getTime(), '系统', '系统', '💡 发送口令【玄铁降临】【神兵强化】【赛博世界无敌】【挂机暴富】可领取福利（每日一次）');
-                }, 300);
+                }, 500);
                 
             } catch (e) {
                 console.error('登录失败:', e);
                 alert('登录失败，请稍后重试');
-                const $btn = $("#loginBtn");
-                if ($btn.length) {
-                    $btn.text('登录').prop('disabled', false);
-                }
-            }
-        }
-        
-        // 异步初始化在线玩家系统（不阻塞登录）
-        async function initOnlinePlayersAsync() {
-            try {
-                if (!supabaseClient || !onlinePlayerId) return;
-                
-                // 并行执行上线注册和获取在线列表
-                await Promise.all([
-                    registerOnline(),
-                    fetchOnlinePlayers()
-                ]);
-                
-                // 启动心跳（每30秒更新一次）
-                if (!heartbeatInterval) {
-                    heartbeatInterval = setInterval(updateHeartbeat, 30000);
-                }
-                
-                // 定时刷新在线列表（每10秒）
-                setInterval(fetchOnlinePlayers, 10000);
-                
-                // 页面关闭时下线
-                window.addEventListener('beforeunload', goOffline);
-                
-                console.log('在线玩家系统初始化成功');
-            } catch (error) {
-                console.error('在线玩家系统初始化失败:', error);
-            }
-        }
-        
-        // 异步初始化云存档（不阻塞登录）
-        async function initCloudSaveAsync() {
-            try {
-                // 检查云端是否有存档
-                await checkCloudSave();
-                
-                // 启动自动云存档（每30秒）
-                if (!autoSaveInterval) {
-                    autoSaveInterval = setInterval(autoCloudSave, 30 * 1000);
-                }
-                
-                console.log('云存档系统初始化成功');
-            } catch (error) {
-                console.error('云存档系统初始化失败:', error);
-                updateCloudSaveStatus('❌', '离线');
             }
         }
 
@@ -17782,34 +17785,25 @@
                         onlinePlayerId = session.user.id;
                         $("#loginModal").hide();
                         
-                        // 立即加载本地数据并显示游戏界面
+                        // 初始化游戏
                         loadGameData();
-                        renderPlayerList();
-                        renderInitialMessages();
-                        updatePlayerInfo();
-                        
-                        // 后台并行执行网络请求（不阻塞界面）
-                        Promise.all([
-                            loadUserCloudSave(),
-                            initOnlinePlayersAsync(),
-                            initCloudSaveAsync()
-                        ]).then(() => {
-                            console.log('自动登录后台数据加载完成');
-                            updatePlayerInfo();
-                        }).catch(e => console.error('后台加载出错:', e));
-                        
-                        // 本地初始化
+                        await loadUserCloudSave();
                         checkOfflineRewards();
                         initDeathSystem();
                         initActivitySystem();
                         initArenaData();
                         checkDailyArenaReward();
+                        renderPlayerList();
+                        renderInitialMessages();
+                        updatePlayerInfo();
                         checkNewUserGiftStatus();
                         checkSignInStatus();
+                        initOnlinePlayers();
+                        initCloudSave();
                         
                         setTimeout(() => {
                             addChatMessage('top', getTime(), '系统', '系统', '💡 发送口令【玄铁降临】【神兵强化】【赛博世界无敌】【挂机暴富】可领取福利（每日一次）');
-                        }, 500);
+                        }, 2000);
                         
                         return true;
                     }
@@ -18583,92 +18577,24 @@
         
         // ========== 初始化 ==========
         async function init() {
-            // 先检查本地登录状态，立即显示界面
-            const savedUser = localStorage.getItem('currentUser');
-            const lastSession = localStorage.getItem('lastSessionTime');
-            const sessionAge = lastSession ? (Date.now() - parseInt(lastSession)) : Infinity;
-            
-            // 如果本地有登录信息且会话在24小时内，先快速进入游戏
-            if (savedUser && sessionAge < 24 * 60 * 60 * 1000) {
-                currentUser = JSON.parse(savedUser);
-                onlinePlayerId = currentUser.id;
-                $("#loginModal").hide();
-                
-                // 立即加载本地数据，显示游戏
-                loadGameData();
-                renderPlayerList();
-                renderInitialMessages();
-                updatePlayerInfo();
-                
-                // 后台初始化（不阻塞）
-                backgroundInit();
-                
-                // 后台验证会话（不阻塞游戏）
-                verifySessionAsync();
-            } else {
-                // 显示登录界面
-                showLogin();
-            }
-        }
-        
-        // 后台初始化（不阻塞界面）
-        async function backgroundInit() {
+            // 先初始化Supabase客户端
             try {
-                // 初始化 Supabase（懒加载）
-                if (!supabaseClient) {
-                    supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-                }
-                
-                // 并行执行所有网络请求
-                await Promise.all([
-                    loadUserCloudSave(),
-                    initOnlinePlayersAsync(),
-                    initCloudSaveAsync()
-                ]);
-                
-                // 刷新界面
-                updatePlayerInfo();
-                console.log('后台初始化完成');
+                supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
             } catch (e) {
-                console.error('后台初始化出错:', e);
+                console.error('初始化数据库连接失败:', e);
             }
             
-            // 本地初始化
-            checkOfflineRewards();
-            initDeathSystem();
-            initActivitySystem();
-            initArenaData();
-            checkDailyArenaReward();
-            checkNewUserGiftStatus();
-            checkSignInStatus();
+            // 检查登录状态
+            const isLoggedIn = await initAuth();
             
-            setTimeout(() => {
-                addChatMessage('top', getTime(), '系统', '系统', '💡 发送口令【玄铁降临】【神兵强化】【赛博世界无敌】【挂机暴富】可领取福利（每日一次）');
-            }, 500);
-        }
-        
-        // 后台验证会话（不阻塞游戏）
-        async function verifySessionAsync() {
-            try {
-                if (!supabaseClient) {
-                    supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-                }
-                
-                const { data: { session } } = await supabaseClient.auth.getSession();
-                
-                if (!session || !session.user) {
-                    // 会话失效，需要重新登录
-                    console.log('会话已失效，请重新登录');
-                    localStorage.removeItem('currentUser');
-                    localStorage.removeItem('lastSessionTime');
-                    // 不强制跳转登录，让用户继续玩本地存档
-                    addChatMessage('top', getTime(), '系统', '系统', '⚠️ 云端会话已过期，云存档功能暂时不可用');
-                } else {
-                    console.log('会话验证成功');
-                }
-            } catch (e) {
-                console.error('验证会话出错:', e);
+            if (!isLoggedIn) {
+                // 未登录，等待用户登录后再初始化游戏
+                console.log('等待用户登录...');
+                return;
             }
+            
+            // 已登录，初始化游戏
+            initGame();
         }
         
         // 初始化游戏（登录后执行）
@@ -18678,8 +18604,25 @@
             
             loadGameData();
             
-            // 后台初始化
-            backgroundInit();
+            // 检查离线收益
+            checkOfflineRewards();
+            
+            initDeathSystem(); // 初始化死亡系统
+            initActivitySystem(); // 初始化活动系统
+            initArenaData(); // 初始化竞技场系统
+            checkDailyArenaReward(); // 检查每日竞技场奖励
+            renderPlayerList();
+            renderInitialMessages();
+            updatePlayerInfo();
+            checkNewUserGiftStatus();
+            checkSignInStatus();
+            initOnlinePlayers(); // 初始化在线玩家系统
+            initCloudSave(); // 初始化云存档系统
+            
+            // 发送欢迎公告
+            setTimeout(() => {
+                addChatMessage('top', getTime(), '系统', '系统', '💡 发送口令【玄铁降临】【神兵强化】【赛博世界无敌】【挂机暴富】可领取福利（每日一次）');
+            }, 2000);
         }
         
         // 更新用户显示
