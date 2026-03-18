@@ -17542,6 +17542,7 @@
                     email: email
                 };
                 localStorage.setItem('currentUser', JSON.stringify(currentUser));
+                localStorage.setItem('lastSessionTime', Date.now().toString()); // 保存会话时间
                 onlinePlayerId = data.user.id;
                 $("#loginModal").hide();
                 
@@ -18577,24 +18578,92 @@
         
         // ========== 初始化 ==========
         async function init() {
-            // 先初始化Supabase客户端
+            // 先检查本地登录状态，立即显示界面
+            const savedUser = localStorage.getItem('currentUser');
+            const lastSession = localStorage.getItem('lastSessionTime');
+            const sessionAge = lastSession ? (Date.now() - parseInt(lastSession)) : Infinity;
+            
+            // 如果本地有登录信息且会话在24小时内，先快速进入游戏
+            if (savedUser && sessionAge < 24 * 60 * 60 * 1000) {
+                currentUser = JSON.parse(savedUser);
+                onlinePlayerId = currentUser.id;
+                $("#loginModal").hide();
+                
+                // 立即加载本地数据，显示游戏
+                loadGameData();
+                renderPlayerList();
+                renderInitialMessages();
+                updatePlayerInfo();
+                
+                // 后台初始化（不阻塞）
+                backgroundInit();
+                
+                // 后台验证会话（不阻塞游戏）
+                verifySessionAsync();
+            } else {
+                // 显示登录界面
+                showLogin();
+            }
+        }
+        
+        // 后台初始化（不阻塞界面）
+        async function backgroundInit() {
             try {
-                supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+                // 初始化 Supabase（懒加载）
+                if (!supabaseClient) {
+                    supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+                }
+                
+                // 并行执行所有网络请求
+                await Promise.all([
+                    loadUserCloudSave(),
+                    initOnlinePlayersAsync(),
+                    initCloudSaveAsync()
+                ]);
+                
+                // 刷新界面
+                updatePlayerInfo();
+                console.log('后台初始化完成');
             } catch (e) {
-                console.error('初始化数据库连接失败:', e);
+                console.error('后台初始化出错:', e);
             }
             
-            // 检查登录状态
-            const isLoggedIn = await initAuth();
+            // 本地初始化
+            checkOfflineRewards();
+            initDeathSystem();
+            initActivitySystem();
+            initArenaData();
+            checkDailyArenaReward();
+            checkNewUserGiftStatus();
+            checkSignInStatus();
             
-            if (!isLoggedIn) {
-                // 未登录，等待用户登录后再初始化游戏
-                console.log('等待用户登录...');
-                return;
+            setTimeout(() => {
+                addChatMessage('top', getTime(), '系统', '系统', '💡 发送口令【玄铁降临】【神兵强化】【赛博世界无敌】【挂机暴富】可领取福利（每日一次）');
+            }, 500);
+        }
+        
+        // 后台验证会话（不阻塞游戏）
+        async function verifySessionAsync() {
+            try {
+                if (!supabaseClient) {
+                    supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+                }
+                
+                const { data: { session } } = await supabaseClient.auth.getSession();
+                
+                if (!session || !session.user) {
+                    // 会话失效，需要重新登录
+                    console.log('会话已失效，请重新登录');
+                    localStorage.removeItem('currentUser');
+                    localStorage.removeItem('lastSessionTime');
+                    // 不强制跳转登录，让用户继续玩本地存档
+                    addChatMessage('top', getTime(), '系统', '系统', '⚠️ 云端会话已过期，云存档功能暂时不可用');
+                } else {
+                    console.log('会话验证成功');
+                }
+            } catch (e) {
+                console.error('验证会话出错:', e);
             }
-            
-            // 已登录，初始化游戏
-            initGame();
         }
         
         // 初始化游戏（登录后执行）
@@ -18604,25 +18673,8 @@
             
             loadGameData();
             
-            // 检查离线收益
-            checkOfflineRewards();
-            
-            initDeathSystem(); // 初始化死亡系统
-            initActivitySystem(); // 初始化活动系统
-            initArenaData(); // 初始化竞技场系统
-            checkDailyArenaReward(); // 检查每日竞技场奖励
-            renderPlayerList();
-            renderInitialMessages();
-            updatePlayerInfo();
-            checkNewUserGiftStatus();
-            checkSignInStatus();
-            initOnlinePlayers(); // 初始化在线玩家系统
-            initCloudSave(); // 初始化云存档系统
-            
-            // 发送欢迎公告
-            setTimeout(() => {
-                addChatMessage('top', getTime(), '系统', '系统', '💡 发送口令【玄铁降临】【神兵强化】【赛博世界无敌】【挂机暴富】可领取福利（每日一次）');
-            }, 2000);
+            // 后台初始化
+            backgroundInit();
         }
         
         // 更新用户显示
