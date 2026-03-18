@@ -19458,6 +19458,9 @@
             // 玩家数据（完全继承聊天室角色）
             player: null,
             
+            // 锁定目标
+            lockedTarget: null,
+            
             // 游戏数据
             level: 1,          // 当前关卡/波数
             kills: 0,          // 击杀数
@@ -19465,6 +19468,7 @@
             drops: [],         // 掉落物
             projectiles: [],   // 飞行物
             damages: [],       // 伤害数字
+            attackEffects: [], // 攻击特效
             lastSpawn: 0,      // 上次刷怪时间
             spawnInterval: 2000, // 刷怪间隔
             monsterCount: 0,   // 当前波怪物数量
@@ -19530,9 +19534,9 @@
                 crit: p.crit || 0,
                 dodge: p.dodge || 0,
                 speed: 3,
-                attackRange: 150,
+                attackRange: 300,  // 增加攻击范围
                 attackCooldown: 0,
-                maxAttackCooldown: 500, // 攻击间隔ms
+                maxAttackCooldown: 400, // 减少攻击间隔，攻击更快
                 facing: 1 // 朝向 1右 -1左
             };
         }
@@ -19544,6 +19548,9 @@
             siegeGame.level = 1;
             siegeGame.kills = 0;
             siegeGame.monsters = [];
+            siegeGame.lockedTarget = null;
+            siegeGame.attackEffects = [];
+            siegeGame.drops = [];
             siegeGame.drops = [];
             siegeGame.projectiles = [];
             siegeGame.damages = [];
@@ -19607,22 +19614,44 @@
                 p.attackCooldown -= 16;
             }
             
-            // 自动攻击最近怪物
-            if (siegeGame.monsters.length > 0 && p.attackCooldown <= 0) {
+            // ========== 自动锁定机制 ==========
+            // 检查当前锁定目标是否有效
+            if (siegeGame.lockedTarget) {
+                const target = siegeGame.lockedTarget;
+                // 目标已死亡或超出范围，清除锁定
+                if (target.hp <= 0 || Math.abs(target.x - p.x) > p.attackRange * 1.5) {
+                    siegeGame.lockedTarget = null;
+                }
+            }
+            
+            // 寻找新的锁定目标（攻击范围内最近的怪物）
+            if (!siegeGame.lockedTarget && siegeGame.monsters.length > 0) {
                 let nearestMonster = null;
                 let nearestDist = Infinity;
                 
                 for (const m of siegeGame.monsters) {
+                    if (m.hp <= 0) continue;
                     const dist = Math.abs(m.x - p.x);
-                    if (dist < nearestDist && dist < p.attackRange) {
+                    if (dist < nearestDist && dist <= p.attackRange) {
                         nearestDist = dist;
                         nearestMonster = m;
                     }
                 }
                 
                 if (nearestMonster) {
-                    playerAttack(nearestMonster);
+                    siegeGame.lockedTarget = nearestMonster;
                 }
+            }
+            
+            // ========== 自动攻击锁定的目标 ==========
+            if (siegeGame.lockedTarget && p.attackCooldown <= 0) {
+                const target = siegeGame.lockedTarget;
+                
+                // 更新朝向
+                p.facing = target.x > p.x ? 1 : -1;
+                
+                // 执行攻击
+                playerAttack(target);
             }
             
             // 更新怪物
@@ -19652,6 +19681,10 @@
                 
                 // 怪物死亡
                 if (m.hp <= 0) {
+                    // 如果死亡的是锁定目标，清除锁定
+                    if (siegeGame.lockedTarget === m) {
+                        siegeGame.lockedTarget = null;
+                    }
                     siegeGame.kills++;
                     siegeGame.monsters.splice(i, 1);
                     
@@ -19660,25 +19693,58 @@
                 }
             }
             
-            // 更新飞行物
+            // 更新飞行物（追踪弹）
             for (let i = siegeGame.projectiles.length - 1; i >= 0; i--) {
                 const proj = siegeGame.projectiles[i];
-                proj.x += proj.vx;
                 
-                // 检测命中
-                for (const m of siegeGame.monsters) {
-                    if (Math.abs(proj.x - m.x) < m.size && Math.abs(proj.y - m.y) < m.size) {
-                        const damage = Math.max(1, proj.damage - m.defense);
-                        m.hp -= damage;
-                        showDamage(m.x, m.y - 20, damage, '#ffcc00');
-                        siegeGame.projectiles.splice(i, 1);
-                        break;
+                // 追踪目标
+                if (proj.target && proj.target.hp > 0) {
+                    const target = proj.target;
+                    const dx = target.x - proj.x;
+                    const dy = target.y - proj.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    
+                    if (dist > 5) {
+                        proj.x += (dx / dist) * proj.speed;
+                        proj.y += (dy / dist) * proj.speed;
                     }
+                    
+                    // 命中检测
+                    if (dist < target.size + 10) {
+                        const damage = Math.max(1, proj.damage - target.defense);
+                        target.hp -= damage;
+                        showDamage(target.x, target.y - 20, damage, '#ffcc00');
+                        
+                        // 暴击判定
+                        if (Math.random() * 100 < p.crit) {
+                            const critDamage = Math.floor(damage * 1.5);
+                            target.hp -= critDamage;
+                            showDamage(target.x, target.y - 35, critDamage + '!', '#ff6600');
+                        }
+                        
+                        siegeGame.projectiles.splice(i, 1);
+                        continue;
+                    }
+                } else {
+                    // 目标已失效，移除飞行物
+                    siegeGame.projectiles.splice(i, 1);
+                    continue;
                 }
                 
-                // 移除超出画布的飞行物
-                if (proj.x > siegeGame.canvas.width || proj.x < 0) {
+                // 超时移除
+                proj.life = (proj.life || 60) - 1;
+                if (proj.life <= 0) {
                     siegeGame.projectiles.splice(i, 1);
+                }
+            }
+            
+            // 更新攻击特效
+            for (let i = siegeGame.attackEffects.length - 1; i >= 0; i--) {
+                const effect = siegeGame.attackEffects[i];
+                effect.alpha -= 0.05;
+                effect.scale += 0.1;
+                if (effect.alpha <= 0) {
+                    siegeGame.attackEffects.splice(i, 1);
                 }
             }
             
@@ -19730,19 +19796,29 @@
             updateSiegeUI();
         }
         
-        // 玩家攻击
-        function playerAttack(monster) {
+        // 玩家攻击（追踪弹机制）
+        function playerAttack(target) {
             const p = siegeGame.player;
             p.attackCooldown = p.maxAttackCooldown;
-            p.facing = monster.x > p.x ? 1 : -1;
             
-            // 创建飞行物
+            // 创建追踪弹
             siegeGame.projectiles.push({
-                x: p.x + p.width / 2,
-                y: p.y,
-                vx: p.facing * 8,
+                x: p.x,
+                y: p.y - 30,
+                target: target,
                 damage: p.attack,
-                color: '#00ffff'
+                speed: 12,
+                color: '#00ffff',
+                life: 60
+            });
+            
+            // 攻击特效
+            siegeGame.attackEffects.push({
+                x: p.x,
+                y: p.y - 30,
+                alpha: 1,
+                scale: 1,
+                color: '#4fc3f7'
             });
         }
         
@@ -19923,12 +19999,61 @@
             ctx.textAlign = 'center';
             ctx.fillText(p.name, p.x, p.y - p.height - 45);
             
+            // ========== 绘制瞄准线（到锁定目标）==========
+            if (siegeGame.lockedTarget) {
+                const target = siegeGame.lockedTarget;
+                
+                // 瞄准线
+                ctx.strokeStyle = 'rgba(255, 100, 100, 0.6)';
+                ctx.lineWidth = 2;
+                ctx.setLineDash([5, 5]);
+                ctx.beginPath();
+                ctx.moveTo(p.x, p.y - 30);
+                ctx.lineTo(target.x, target.y);
+                ctx.stroke();
+                ctx.setLineDash([]);
+                
+                // 攻击范围指示
+                ctx.strokeStyle = 'rgba(79, 195, 247, 0.3)';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y - 30, p.attackRange, 0, Math.PI * 2);
+                ctx.stroke();
+            }
+            
             // 绘制怪物
             for (const m of siegeGame.monsters) {
+                // 锁定目标特殊标识
+                const isLocked = siegeGame.lockedTarget === m;
+                
                 ctx.fillStyle = m.color;
                 ctx.beginPath();
                 ctx.arc(m.x, m.y, m.size, 0, Math.PI * 2);
                 ctx.fill();
+                
+                // 锁定标识（红色边框和瞄准框）
+                if (isLocked) {
+                    ctx.strokeStyle = '#ff4444';
+                    ctx.lineWidth = 3;
+                    ctx.beginPath();
+                    ctx.arc(m.x, m.y, m.size + 8, 0, Math.PI * 2);
+                    ctx.stroke();
+                    
+                    // 锁定十字准星
+                    ctx.strokeStyle = '#ff0000';
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.moveTo(m.x - 15, m.y - m.size - 25);
+                    ctx.lineTo(m.x + 15, m.y - m.size - 25);
+                    ctx.moveTo(m.x, m.y - m.size - 35);
+                    ctx.lineTo(m.x, m.y - m.size - 15);
+                    ctx.stroke();
+                    
+                    // "锁定"文字
+                    ctx.fillStyle = '#ff4444';
+                    ctx.font = 'bold 10px Arial';
+                    ctx.fillText('🔒 锁定', m.x, m.y - m.size - 40);
+                }
                 
                 // 怪物血条
                 ctx.fillStyle = '#333';
@@ -19942,11 +20067,33 @@
                 ctx.fillText(m.name, m.x, m.y - m.size - 20);
             }
             
-            // 绘制飞行物
+            // 绘制攻击特效
+            for (const effect of siegeGame.attackEffects) {
+                ctx.fillStyle = `rgba(79, 195, 247, ${effect.alpha})`;
+                ctx.beginPath();
+                ctx.arc(effect.x, effect.y, 20 * effect.scale, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            
+            // 绘制飞行物（追踪弹）
             for (const proj of siegeGame.projectiles) {
+                // 发光效果
+                ctx.fillStyle = 'rgba(0, 255, 255, 0.5)';
+                ctx.beginPath();
+                ctx.arc(proj.x, proj.y, 10, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // 核心
                 ctx.fillStyle = proj.color;
                 ctx.beginPath();
                 ctx.arc(proj.x, proj.y, 5, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // 拖尾
+                ctx.fillStyle = 'rgba(0, 255, 255, 0.3)';
+                ctx.beginPath();
+                ctx.arc(proj.x - (proj.target ? (proj.x - proj.target.x) * 0.1 : 0), 
+                        proj.y - (proj.target ? (proj.y - proj.target.y) * 0.1 : 0), 8, 0, Math.PI * 2);
                 ctx.fill();
             }
             
