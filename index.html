@@ -17507,6 +17507,11 @@
         // Supabase 登录
         async function doSupabaseLogin(username, password) {
             try {
+                // 显示加载提示
+                const $loginBtn = $("#loginBtn");
+                const originalText = $loginBtn.text();
+                $loginBtn.text('登录中...').prop('disabled', true);
+                
                 // 初始化 Supabase 客户端
                 if (!supabaseClient) {
                     supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -17521,6 +17526,7 @@
                 });
                 
                 if (error) {
+                    $loginBtn.text(originalText).prop('disabled', false);
                     if (error.message.includes('Invalid login credentials')) {
                         alert('用户名或密码错误');
                     } else {
@@ -17529,52 +17535,98 @@
                     return;
                 }
                 
-                // 登录成功
+                // 登录成功 - 立即关闭登录框
                 currentUser = {
                     id: data.user.id,
                     username: username,
                     email: email
                 };
-                
-                // 保存登录状态
                 localStorage.setItem('currentUser', JSON.stringify(currentUser));
-                
-                // 设置在线玩家ID为用户ID
                 onlinePlayerId = data.user.id;
-                
                 $("#loginModal").hide();
                 
-                // 加载本地数据
+                // 立即加载本地数据并显示游戏界面
                 loadGameData();
+                renderPlayerList();
+                renderInitialMessages();
+                updatePlayerInfo();
                 
-                // 检查并下载云端存档
-                await loadUserCloudSave();
+                // 后台并行执行网络请求（不阻塞界面）
+                Promise.all([
+                    loadUserCloudSave(),      // 加载云端存档
+                    initOnlinePlayersAsync(), // 上线注册
+                    initCloudSaveAsync()      // 云存档初始化
+                ]).then(() => {
+                    console.log('后台数据加载完成');
+                    // 云存档加载后刷新界面
+                    updatePlayerInfo();
+                }).catch(e => console.error('后台加载出错:', e));
                 
-                // 检查离线收益
-                checkOfflineRewards();
-                
-                // 初始化其他系统
+                // 其他初始化（本地操作）
                 initDeathSystem();
                 initActivitySystem();
                 initArenaData();
                 checkDailyArenaReward();
-                renderPlayerList();
-                renderInitialMessages();
-                updatePlayerInfo();
                 checkNewUserGiftStatus();
                 checkSignInStatus();
-                initOnlinePlayers();
-                initCloudSave();
+                checkOfflineRewards();
                 
                 // 发送欢迎消息
                 setTimeout(() => {
                     addChatMessage('top', getTime(), '系统', '系统', `🎉 欢迎回来，${gameData.player.name}！`);
                     addChatMessage('top', getTime(), '系统', '系统', '💡 发送口令【玄铁降临】【神兵强化】【赛博世界无敌】【挂机暴富】可领取福利（每日一次）');
-                }, 500);
+                }, 300);
                 
             } catch (e) {
                 console.error('登录失败:', e);
                 alert('登录失败，请稍后重试');
+                $("#loginBtn").text('登录').prop('disabled', false);
+            }
+        }
+        
+        // 异步初始化在线玩家系统（不阻塞登录）
+        async function initOnlinePlayersAsync() {
+            try {
+                if (!supabaseClient || !onlinePlayerId) return;
+                
+                // 并行执行上线注册和获取在线列表
+                await Promise.all([
+                    registerOnline(),
+                    fetchOnlinePlayers()
+                ]);
+                
+                // 启动心跳（每30秒更新一次）
+                if (!heartbeatInterval) {
+                    heartbeatInterval = setInterval(updateHeartbeat, 30000);
+                }
+                
+                // 定时刷新在线列表（每10秒）
+                setInterval(fetchOnlinePlayers, 10000);
+                
+                // 页面关闭时下线
+                window.addEventListener('beforeunload', goOffline);
+                
+                console.log('在线玩家系统初始化成功');
+            } catch (error) {
+                console.error('在线玩家系统初始化失败:', error);
+            }
+        }
+        
+        // 异步初始化云存档（不阻塞登录）
+        async function initCloudSaveAsync() {
+            try {
+                // 检查云端是否有存档
+                await checkCloudSave();
+                
+                // 启动自动云存档（每30秒）
+                if (!autoSaveInterval) {
+                    autoSaveInterval = setInterval(autoCloudSave, 30 * 1000);
+                }
+                
+                console.log('云存档系统初始化成功');
+            } catch (error) {
+                console.error('云存档系统初始化失败:', error);
+                updateCloudSaveStatus('❌', '离线');
             }
         }
 
@@ -17724,25 +17776,34 @@
                         onlinePlayerId = session.user.id;
                         $("#loginModal").hide();
                         
-                        // 初始化游戏
+                        // 立即加载本地数据并显示游戏界面
                         loadGameData();
-                        await loadUserCloudSave();
+                        renderPlayerList();
+                        renderInitialMessages();
+                        updatePlayerInfo();
+                        
+                        // 后台并行执行网络请求（不阻塞界面）
+                        Promise.all([
+                            loadUserCloudSave(),
+                            initOnlinePlayersAsync(),
+                            initCloudSaveAsync()
+                        ]).then(() => {
+                            console.log('自动登录后台数据加载完成');
+                            updatePlayerInfo();
+                        }).catch(e => console.error('后台加载出错:', e));
+                        
+                        // 本地初始化
                         checkOfflineRewards();
                         initDeathSystem();
                         initActivitySystem();
                         initArenaData();
                         checkDailyArenaReward();
-                        renderPlayerList();
-                        renderInitialMessages();
-                        updatePlayerInfo();
                         checkNewUserGiftStatus();
                         checkSignInStatus();
-                        initOnlinePlayers();
-                        initCloudSave();
                         
                         setTimeout(() => {
                             addChatMessage('top', getTime(), '系统', '系统', '💡 发送口令【玄铁降临】【神兵强化】【赛博世界无敌】【挂机暴富】可领取福利（每日一次）');
-                        }, 2000);
+                        }, 500);
                         
                         return true;
                     }
