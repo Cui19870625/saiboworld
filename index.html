@@ -24618,7 +24618,8 @@
                     }
                     
                     if (won) {
-                        totalWin += winAmount;
+                        // 命中时：赢利 + 本金退回
+                        totalWin += winAmount + bet.amount;
                     }
                 });
                 
@@ -31782,8 +31783,9 @@
                     }
                     
                     if (won) {
-                        totalWin += winAmount;
-                        winDetails.push({ target: bet.target, amount: winAmount });
+                        // 命中时：赢利 + 本金退回
+                        totalWin += winAmount + bet.amount;
+                        winDetails.push({ target: bet.target, amount: winAmount + bet.amount });
                     }
                 });
             } else if (result.type === 'shark') {
@@ -31818,8 +31820,9 @@
                     }
                     
                     if (winAmount > 0) {
-                        totalWin += winAmount;
-                        winDetails.push({ target: bet.target, amount: winAmount });
+                        // 命中时：赢利 + 本金退回
+                        totalWin += winAmount + bet.amount;
+                        winDetails.push({ target: bet.target, amount: winAmount + bet.amount });
                     }
                 });
                 
