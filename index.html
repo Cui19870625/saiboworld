@@ -30029,20 +30029,15 @@
                 fbDisplayTimerId = null;
             }
             
-            // 根据当前阶段决定是否清除下注显示
-            if (fbState.phase !== 'betting') {
-                // 非下注阶段，清除下注显示
-                clearFBBetDisplay();
-            } else {
-                // 下注阶段，更新所有动物卡片的下注显示
-                // fbCurrentRoundBets 已经包含了当前玩家的下注
-                FB_CONFIG.animals.forEach(animal => {
-                    updateFBBetCell(animal.id);
-                });
-                updateFBZoneDisplay('flying');
-                updateFBZoneDisplay('beast');
-                
-                // 异步加载其他玩家的下注（如果有数据库连接）
+            // 始终更新下注显示（不论什么阶段，让玩家能看到自己的下注）
+            FB_CONFIG.animals.forEach(animal => {
+                updateFBBetCell(animal.id);
+            });
+            updateFBZoneDisplay('flying');
+            updateFBZoneDisplay('beast');
+            
+            // 如果是下注阶段，异步加载其他玩家的下注
+            if (fbState.phase === 'betting') {
                 loadFBCurrentRoundBets();
             }
             
@@ -30104,13 +30099,12 @@
                     console.log('🔄 阶段变化:', lastPhase, '->', currentPhase);
                     
                     if (lastPhase === 'betting' && currentPhase === 'spinning') {
-                        // 从下注进入走灯，开始走灯动画
+                        // 从下注进入走灯，开始走灯动画（保留下注显示）
                         console.log('🎰 开始走灯动画');
-                        clearFBBetDisplay(); // 清除下注显示
                         const remainingTime = Math.max(0, fbState.spinEndTime - Date.now());
                         startFBSpinAnimationFromSync(remainingTime);
                     } else if (lastPhase === 'spinning' && currentPhase === 'result') {
-                        // 从走灯进入结果，显示结果
+                        // 从走灯进入结果，显示结果（保留下注显示）
                         console.log('🎰 显示开奖结果');
                         showFBAutoResult(fbState.pendingResult);
                     } else if (lastPhase === 'result' && currentPhase === 'betting') {
@@ -30127,10 +30121,8 @@
                     lastPhase = currentPhase;
                 }
                 
-                // 下注阶段持续刷新下注显示（确保数字一直显示）
-                if (currentPhase === 'betting') {
-                    updateFBBetsDisplay();
-                }
+                // 所有阶段都刷新下注显示（让玩家随时看到自己的下注）
+                updateFBBetsDisplay();
                 
                 // 检测局号变化
                 if (currentRound !== lastRoundNumber) {
@@ -30386,8 +30378,8 @@
             const popup = document.getElementById('fbFlashPopup');
             if (popup) popup.remove();
             
-            // 清除下注显示（结果阶段不再需要显示下注）
-            clearFBBetDisplay();
+            // 保留下注显示（让玩家看到自己押了什么）
+            // updateFBBetsDisplay(); // 已在定时器中持续刷新
             
             // 高亮结果
             highlightFBResult(result.type === 'animal' ? result.id : result.type);
