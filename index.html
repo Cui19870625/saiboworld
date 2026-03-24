@@ -24631,6 +24631,13 @@
                 }
             }
             
+            // === 彩金池动态调整 ===
+            // 商家盈亏 = 玩家总下注 - 玩家总获得
+            const houseProfit = fbState.totalBet - totalWin;
+            fbState.jackpot += houseProfit;
+            fbState.jackpot = Math.max(FB_CONFIG.jackpotBase, fbState.jackpot);
+            console.log(`💎 全局彩金池变化: 商家盈亏=${houseProfit}, 彩金池=${fbState.jackpot}`);
+            
             // 更新状态
             fbState.lastWin = totalWin - fbState.totalBet;
             fbState.lastResult = result;
@@ -24757,7 +24764,8 @@
                     }
                     
                     if (won) {
-                        totalWin += winAmount;
+                        // 命中时：赢利 + 本金退回
+                        totalWin += winAmount + bet.amount;
                     }
                 });
                 
@@ -24768,6 +24776,13 @@
                     console.log('🎰 飞禽走兽后台发放收益:', totalWin);
                 }
             }
+            
+            // === 彩金池动态调整 ===
+            // 商家盈亏 = 玩家总下注 - 玩家总获得
+            const houseProfit = fbState.totalBet - totalWin;
+            fbState.jackpot += houseProfit;
+            fbState.jackpot = Math.max(FB_CONFIG.jackpotBase, fbState.jackpot);
+            console.log(`💎 后台彩金池变化: 商家盈亏=${houseProfit}, 彩金池=${fbState.jackpot}`);
             
             // 计算净盈亏
             const netProfit = totalWin - fbState.totalBet;
@@ -31874,20 +31889,31 @@
                         console.log(`💰 区域下注: ${bet.target}, 金额: ${bet.amount}, 赢得: ${winAmount}`);
                     }
                     if (winAmount > 0) {
-                        totalWin += winAmount;
-                        winDetails.push({ target: bet.target, amount: winAmount });
+                        // 命中时：赢利 + 本金退回
+                        totalWin += winAmount + bet.amount;
+                        winDetails.push({ target: bet.target, amount: winAmount + bet.amount });
                     }
                 });
                 console.log(`💵 通赔总赢得: ${totalWin}`);
             } else if (result.type === 'bomb') {
-                // 炸弹开奖 - 通杀，押注全输，奖池滚入下局
+                // 炸弹开奖 - 通杀，押注全输
                 console.log('💣 通杀！所有下注都输！');
                 totalWin = 0;
-                fbState.jackpot += fbState.totalBet;
+                // 彩金池由统一逻辑处理，不再单独增加
             }
             
             // 直接发放奖励（不扣手续费，系统通过概率优势获利）
             console.log(`🏆 结算: 总赢得=${totalWin}, 总下注=${fbState.totalBet}`);
+            
+            // === 彩金池动态调整 ===
+            // 商家盈亏 = 玩家总下注 - 玩家总获得
+            // 正数表示商家盈利，彩金池增加；负数表示商家亏损，彩金池减少
+            const houseProfit = fbState.totalBet - totalWin;
+            fbState.jackpot += houseProfit;
+            // 彩金池最低不低于基数
+            fbState.jackpot = Math.max(FB_CONFIG.jackpotBase, fbState.jackpot);
+            console.log(`💎 彩金池变化: 商家盈亏=${houseProfit}, 彩金池=${fbState.jackpot}`);
+            
             if (totalWin > 0) {
                 const beforeSilver = gameData.player.silver || 0;
                 // 发放奖励
