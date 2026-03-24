@@ -30189,40 +30189,57 @@
         function openFlyingBeasts() {
             console.log('🎮 === 打开飞禽走兽 v5 ===');
             
-            // 确保gameData存在
-            if (typeof gameData === 'undefined') {
-                console.error('❌ gameData未定义！');
-                alert('游戏数据未加载，请刷新页面！');
-                return;
+            try {
+                // 确保gameData存在
+                if (typeof gameData === 'undefined') {
+                    console.error('❌ gameData未定义！');
+                    alert('游戏数据未加载，请刷新页面！');
+                    return;
+                }
+                if (!gameData.player) {
+                    gameData.player = { silver: 0 };
+                }
+                
+                // 确保金币非负（不再自动补充，由新人红包领取）
+                if (gameData.player.silver < 0 || isNaN(gameData.player.silver)) {
+                    gameData.player.silver = 0;
+                }
+                
+                const modal = document.getElementById('flyingBeastsModal');
+                
+                if (!modal) {
+                    console.error('❌ 找不到飞禽走兽弹窗元素！');
+                    alert('游戏界面加载失败，请刷新页面！');
+                    return;
+                }
+                
+                modal.style.display = 'flex';
+                console.log('✅ 弹窗已显示');
+                
+                // 加载当前局的所有下注（网络同步）
+                try {
+                    loadFBCurrentRoundBets();
+                } catch (e) {
+                    console.error('加载下注失败:', e);
+                }
+                
+                // 初始化界面（不重新启动游戏，只更新UI）
+                try {
+                    initFlyingBeastsUI();
+                } catch (e) {
+                    console.error('初始化界面失败:', e);
+                }
+                
+                // 同步显示当前游戏状态（游戏已在后台运行）
+                try {
+                    syncFBDisplay();
+                } catch (e) {
+                    console.error('同步显示失败:', e);
+                }
+            } catch (e) {
+                console.error('打开飞禽走兽失败:', e);
+                alert('打开游戏失败: ' + e.message);
             }
-            if (!gameData.player) {
-                gameData.player = { silver: 0 };
-            }
-            
-            // 确保金币非负（不再自动补充，由新人红包领取）
-            if (gameData.player.silver < 0 || isNaN(gameData.player.silver)) {
-                gameData.player.silver = 0;
-            }
-            
-            const modal = document.getElementById('flyingBeastsModal');
-            
-            if (!modal) {
-                console.error('❌ 找不到飞禽走兽弹窗元素！');
-                alert('游戏界面加载失败，请刷新页面！');
-                return;
-            }
-            
-            modal.style.display = 'flex';
-            console.log('✅ 弹窗已显示');
-            
-            // 加载当前局的所有下注（网络同步）
-            loadFBCurrentRoundBets();
-            
-            // 初始化界面（不重新启动游戏，只更新UI）
-            initFlyingBeastsUI();
-            
-            // 同步显示当前游戏状态（游戏已在后台运行）
-            syncFBDisplay();
         }
         
         // 挂载到 window 对象
