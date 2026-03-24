@@ -30124,6 +30124,11 @@
                     lastPhase = currentPhase;
                 }
                 
+                // 下注阶段持续刷新下注显示（确保数字一直显示）
+                if (currentPhase === 'betting') {
+                    updateFBBetsDisplay();
+                }
+                
                 // 检测局号变化
                 if (currentRound !== lastRoundNumber) {
                     lastRoundNumber = currentRound;
@@ -30150,6 +30155,16 @@
         // 从同步状态开始走灯动画
         function startFBSpinAnimationFromSync(remainingTime) {
             console.log('🎰 开始走灯动画，剩余时间:', remainingTime, 'ms');
+            
+            // 清理旧的定时器，防止重复动画
+            if (fbLightTimer) {
+                clearInterval(fbLightTimer);
+                fbLightTimer = null;
+            }
+            if (fbState.countdownTimer) {
+                clearInterval(fbState.countdownTimer);
+                fbState.countdownTimer = null;
+            }
             
             fbState.isSpinning = true;
             updateFBPhaseDisplay();
@@ -30202,6 +30217,13 @@
             if (countdownDisplay && countdownText) {
                 countdownDisplay.style.display = 'block';
                 countdownText.textContent = `⏱️ ${remainingSeconds}`;
+                countdownText.style.color = '#ffd700';
+                countdownText.style.animation = '';
+                
+                // 清理旧的倒计时定时器
+                if (fbState.countdownTimer) {
+                    clearInterval(fbState.countdownTimer);
+                }
                 
                 fbState.countdownTimer = setInterval(() => {
                     remainingSeconds--;
@@ -31014,6 +31036,16 @@
         function fbStartAllFlashEffect(result, duration) {
             console.log('💫 全场爆灯特效开始！持续时间:', duration);
             
+            // 清理旧的闪烁定时器
+            if (fbState.flashInterval) {
+                clearInterval(fbState.flashInterval);
+                fbState.flashInterval = null;
+            }
+            
+            // 移除旧的弹窗
+            const oldPopup = document.getElementById('fbFlashPopup');
+            if (oldPopup) oldPopup.remove();
+            
             // 在走灯区中间创建弹窗
             const lightGrid = document.getElementById('fbLightGrid');
             if (!lightGrid) return;
@@ -31132,6 +31164,16 @@
         
         // 走灯动画 - 华丽版（流畅无停顿）
         function fbRunLightAnimation(result, targetIndex, totalDuration) {
+            // 清理旧的定时器
+            if (fbLightTimer) {
+                clearInterval(fbLightTimer);
+                fbLightTimer = null;
+            }
+            if (fbState.countdownTimer) {
+                clearInterval(fbState.countdownTimer);
+                fbState.countdownTimer = null;
+            }
+            
             // 从上一轮结束的位置开始
             const startIndex = FB_LIGHT_PATH.indexOf(fbState.lastLightEndPosition);
             console.log('🚀 走灯起始位置:', fbState.lastLightEndPosition, '起始索引:', startIndex);
@@ -31146,6 +31188,8 @@
             if (countdownDisplay && countdownText) {
                 countdownDisplay.style.display = 'block';
                 countdownText.textContent = `⏱️ ${remainingTime}`;
+                countdownText.style.color = '#ffd700';
+                countdownText.style.animation = '';
                 
                 // 倒计时计时器 - 从15或28倒数到1
                 fbState.countdownTimer = setInterval(() => {
@@ -31262,6 +31306,12 @@
         
         // 金鲨继续走灯到第二个目标 - 华丽版（流畅无停顿）
         function fbContinueSharkLight(result, sharkPos) {
+            // 清理旧的走灯定时器
+            if (fbLightTimer) {
+                clearInterval(fbLightTimer);
+                fbLightTimer = null;
+            }
+            
             // 随机选择一个动物（排除金鲨）
             const otherAnimals = ['swallow', 'pigeon', 'peacock', 'eagle', 'rabbit', 'monkey', 'panda', 'lion'];
             const randomAnimal = otherAnimals[Math.floor(Math.random() * otherAnimals.length)];
