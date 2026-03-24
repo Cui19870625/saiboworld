@@ -24525,14 +24525,26 @@
                 return;
             }
             
-            // 初始化 Realtime 订阅
-            await initFBRealtime();
+            // 尝试初始化 Realtime 订阅（如果 Supabase 可用）
+            try {
+                if (supabaseClient) {
+                    await initFBRealtime();
+                }
+            } catch (e) {
+                console.log('🎰 Realtime初始化失败，使用本地模式:', e.message);
+            }
             
-            // 从数据库加载历史开奖记录
-            const history = await fbLoadHistoryFromDB();
-            if (history.length > 0) {
-                fbState.history = history;
-                console.log('🎰 已加载历史开奖记录:', history.length, '条');
+            // 尝试从数据库加载历史开奖记录
+            try {
+                if (supabaseClient) {
+                    const history = await fbLoadHistoryFromDB();
+                    if (history.length > 0) {
+                        fbState.history = history;
+                        console.log('🎰 已加载历史开奖记录:', history.length, '条');
+                    }
+                }
+            } catch (e) {
+                console.log('🎰 历史记录加载失败，使用本地记录:', e.message);
             }
             
             // 获取当前全局状态
@@ -24545,60 +24557,78 @@
             
             // 启动全局同步计时器（每秒更新状态）
             fbState.timer = setInterval(async () => {
-                const now = Date.now();
-                const newGlobalState = fbGetGlobalState();
-                
-                // 检测局号变化（新局开始）
-                if (newGlobalState.roundNumber !== fbState.roundNumber) {
-                    console.log('🎰 新局开始:', newGlobalState.roundNumber);
+                try {
+                    const now = Date.now();
+                    const newGlobalState = fbGetGlobalState();
                     
-                    // 结算上一局
-                    if (fbState.phase === 'result' || fbState.phase === 'spinning') {
-                        await fbGlobalSettle(newGlobalState.roundNumber - 1);
-                    }
-                    
-                    // 重置新局状态
-                    fbState.roundNumber = newGlobalState.roundNumber;
-                    fbState.bets = [];
-                    fbState.confirmedBets = [];
-                    fbState.totalBet = 0;
-                    fbState.pendingResult = null;
-                    fbState.isSpinning = false;
-                    
-                    // 清空上一局的网络下注记录
-                    clearFBPreviousRoundBets();
-                    
-                    // 清空下注显示
-                    if (typeof clearFBBetDisplay === 'function') {
-                        clearFBBetDisplay();
-                    }
-                }
-                
-                // 检测阶段变化
-                if (newGlobalState.phase !== fbState.phase) {
-                    console.log('🎰 阶段变化:', fbState.phase, '->', newGlobalState.phase);
-                    
-                    if (newGlobalState.phase === 'spinning') {
-                        // 进入走灯阶段，需要获取或生成开奖结果
-                        await fbGlobalStartSpin();
-                    } else if (newGlobalState.phase === 'result') {
-                        // 进入结果阶段
+                    // 检测局号变化（新局开始）
+                    if (newGlobalState.roundNumber !== fbState.roundNumber) {
+                        console.log('🎰 新局开始:', newGlobalState.roundNumber);
+                        
+                        // 结算上一局
+                        if (fbState.phase === 'result' || fbState.phase === 'spinning') {
+                            try {
+                                await fbGlobalSettle(newGlobalState.roundNumber - 1);
+                            } catch (e) {
+                                console.error('🎰 结算错误:', e);
+                            }
+                        }
+                        
+                        // 重置新局状态
+                        fbState.roundNumber = newGlobalState.roundNumber;
+                        fbState.bets = [];
+                        fbState.confirmedBets = [];
+                        fbState.totalBet = 0;
+                        fbState.pendingResult = null;
                         fbState.isSpinning = false;
-                    } else if (newGlobalState.phase === 'betting') {
-                        // 进入下注阶段，加载当前局的所有下注
-                        fbState.isSpinning = false;
-                        await loadFBCurrentRoundBets();
+                        
+                        // 清空上一局的网络下注记录
+                        if (typeof clearFBPreviousRoundBets === 'function') {
+                            clearFBPreviousRoundBets();
+                        }
+                        
+                        // 清空下注显示
+                        if (typeof clearFBBetDisplay === 'function') {
+                            clearFBBetDisplay();
+                        }
                     }
                     
-                    fbState.phase = newGlobalState.phase;
-                }
-                
-                // 更新倒计时
-                fbState.countdown = newGlobalState.countdown;
-                
-                // 更新界面显示
-                if (typeof updateFBPhaseDisplay === 'function') {
-                    updateFBPhaseDisplay();
+                    // 检测阶段变化
+                    if (newGlobalState.phase !== fbState.phase) {
+                        console.log('🎰 阶段变化:', fbState.phase, '->', newGlobalState.phase);
+                        
+                        if (newGlobalState.phase === 'spinning') {
+                            // 进入走灯阶段，需要获取或生成开奖结果
+                            try {
+                                await fbGlobalStartSpin();
+                            } catch (e) {
+                                console.error('🎰 开奖错误:', e);
+                            }
+                        } else if (newGlobalState.phase === 'result') {
+                            // 进入结果阶段
+                            fbState.isSpinning = false;
+                        } else if (newGlobalState.phase === 'betting') {
+                            // 进入下注阶段，加载当前局的所有下注
+                            fbState.isSpinning = false;
+                            try {
+                                await loadFBCurrentRoundBets();
+                            } catch (e) {
+                                console.error('🎰 加载下注错误:', e);
+                            }
+                        }
+                        
+                        fbState.phase = newGlobalState.phase;
+                    }
+                    
+                    // 更新倒计时
+                    fbState.countdown = newGlobalState.countdown;
+                    
+                    // 更新界面显示
+                    if (typeof updateFBPhaseDisplay === 'function') {
+                        updateFBPhaseDisplay();
+                    }
+                } catch (e) {
+                    console.error('🎰 计时器错误:', e);
                 }
             }, 1000);
             
@@ -24966,8 +24996,14 @@
                 return;
             }
             
-            // 初始化 Realtime 订阅
-            await initRaceRealtime();
+            // 尝试初始化 Realtime 订阅（如果 Supabase 可用）
+            try {
+                if (supabaseClient) {
+                    await initRaceRealtime();
+                }
+            } catch (e) {
+                console.log('🏁 Realtime初始化失败，使用本地模式:', e.message);
+            }
             
             // 获取当前全局状态
             const globalState = raceGetGlobalState();
