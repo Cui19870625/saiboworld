@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+.item-tooltip {
+    position: fixed !important;
+    z-index: 9999999 !important;
+    background: linear-gradient(135deg, rgba(26, 26, 46, 0.98) 0%, rgba(22, 33, 62, 0.98) 100%);
+    border: 2px solid #8A8A9A;
+    border-radius: 8px;
+    padding: 12px 15px;
+    min-width: 200px;
+    max-width: 280px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+    pointer-events: none;
+    display: none;
+    font-size: 13px;
+    color: white;
+}
+
+.item-tooltip.show {
+    display: block !important;
+}
+
+.test-item {
+    width: 100px;
+    height: 100px;
+    background: #333;
+    border: 2px solid #8A8A9A;
+    margin: 100px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+}
+</style>
+</head>
+<body style="background: #1a1a2e;">
+<h1 style="color: white;">Tooltip简单测试</h1>
+<div class="test-item" id="testItem">鼠标移到这里</div>
+
+<div class="item-tooltip" id="itemTooltip">
+    <div class="tooltip-name" id="tooltipName">测试物品</div>
+    <div class="tooltip-type" id="tooltipType">类型: 测试</div>
+    <div class="tooltip-stats" id="tooltipStats">属性: +100 攻击</div>
+</div>
+
+<script>
+console.log('页面加载完成');
+
+const testItem = document.getElementById('testItem');
+const tooltip = document.getElementById('itemTooltip');
+
+testItem.onmouseenter = function(e) {
+    console.log('mouseenter触发');
+    tooltip.classList.add('show');
+    moveTooltip(e);
+};
+
+testItem.onmouseleave = function() {
+    console.log('mouseleave触发');
+    tooltip.classList.remove('show');
+};
+
+testItem.onmousemove = function(e) {
+    moveTooltip(e);
+};
+
+function moveTooltip(e) {
+    tooltip.style.left = (e.clientX + 15) + 'px';
+    tooltip.style.top = (e.clientY + 15) + 'px';
+}
+</script>
+</body>
+</html>

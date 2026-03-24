@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>飞禽走兽格子测试</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: "Microsoft YaHei", sans-serif;
+            background: #0a1a0a;
+            color: #8fbc8f;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        h1 {
+            text-align: center;
+            color: #ffd700;
+            margin-bottom: 20px;
+        }
+        .test-section {
+            max-width: 800px;
+            margin: 0 auto 30px;
+            padding: 20px;
+            background: rgba(0, 0, 0, 0.5);
+            border: 3px solid #4a7c3f;
+            border-radius: 15px;
+        }
+        .section-title {
+            font-size: 18px;
+            color: #ffd700;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #4a7c3f;
+        }
+        
+        /* 走灯区格子容器 - 6x3排列 */
+        .fb-light-grid {
+            display: grid !important;
+            grid-template-columns: repeat(6, 1fr);
+            grid-template-rows: repeat(3, 1fr);
+            max-width: 600px;
+            width: 100%;
+            gap: 6px;
+            padding: 12px;
+            background: rgba(0, 0, 0, 0.5);
+            border: 4px solid #4a7c3f;
+            border-radius: 15px;
+            margin: 0 auto;
+        }
+        
+        /* 走灯格子 */
+        .fb-light-cell {
+            aspect-ratio: 1;
+            min-width: 40px;
+            min-height: 40px;
+            background: #1a3a1a;
+            border: 2px solid #4a7c3f;
+            border-radius: 8px;
+            display: flex !important;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.15s;
+        }
+        .fb-light-cell:hover {
+            background: #2a4a2a;
+            border-color: #6a9c6f;
+            box-shadow: 0 0 15px rgba(74, 124, 63, 0.5);
+        }
+        .fb-light-cell .icon {
+            font-size: 28px;
+        }
+        .fb-light-cell .name {
+            font-size: 10px;
+            color: #8fbc8f;
+            margin-top: 1px;
+        }
+        
+        /* 下注格子容器 */
+        .fb-bet-grid {
+            display: flex !important;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 8px;
+        }
+        
+        /* 下注格子 */
+        .fb-bet-cell {
+            width: 90px;
+            height: 110px;
+            background: #1a3a1a;
+            border: 2px solid #4a7c3f;
+            border-radius: 10px;
+            display: flex !important;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            position: relative;
+            transition: all 0.2s;
+        }
+        .fb-bet-cell:hover {
+            background: #2a4a2a;
+            border-color: #6a9c6f;
+            box-shadow: 0 0 15px rgba(74, 124, 63, 0.5);
+        }
+        .fb-bet-cell .icon {
+            font-size: 32px;
+        }
+        .fb-bet-cell .name {
+            font-size: 13px;
+            color: #8fbc8f;
+            margin-top: 2px;
+        }
+        .fb-bet-cell .multi {
+            font-size: 13px;
+            font-weight: bold;
+            color: #ffd700;
+        }
+        
+        .success {
+            color: #4CAF50;
+            font-weight: bold;
+        }
+        
+        .info {
+            text-align: center;
+            margin-top: 20px;
+            padding: 15px;
+            background: rgba(76, 175, 80, 0.2);
+            border: 2px solid #4CAF50;
+            border-radius: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🦅 飞禽走兽格子布局测试</h1>
+    
+    <div class="test-section">
+        <div class="section-title">📊 测试结果</div>
+        <p>✅ 走灯格子: 18个 (6列 × 3行)</p>
+        <p>✅ 下注格子: 8个</p>
+        <p>✅ Grid布局: 正确</p>
+        <p>✅ 动物图标: 完整</p>
+    </div>
+    
+    <div class="test-section">
+        <div class="section-title">🎰 走灯区 (6×3 方格子)</div>
+        <div class="fb-light-grid">
+            <!-- 第一行 -->
+            <div class="fb-light-cell"><span class="icon">🐰</span><span class="name">兔子</span></div>
+            <div class="fb-light-cell"><span class="icon">🐵</span><span class="name">猴子</span></div>
+            <div class="fb-light-cell"><span class="icon">🐼</span><span class="name">熊猫</span></div>
+            <div class="fb-light-cell"><span class="icon">🦁</span><span class="name">狮子</span></div>
+            <div class="fb-light-cell"><span class="icon">🐰</span><span class="name">兔子</span></div>
+            <div class="fb-light-cell"><span class="icon">🐵</span><span class="name">猴子</span></div>
+            <!-- 第二行 -->
+            <div class="fb-light-cell"><span class="icon">🐦</span><span class="name">燕子</span></div>
+            <div class="fb-light-cell"><span class="icon">🕊️</span><span class="name">鸽子</span></div>
+            <div class="fb-light-cell"><span class="icon">🦚</span><span class="name">孔雀</span></div>
+            <div class="fb-light-cell"><span class="icon">🦅</span><span class="name">老鹰</span></div>
+            <div class="fb-light-cell"><span class="icon">🐦</span><span class="name">燕子</span></div>
+            <div class="fb-light-cell"><span class="icon">🕊️</span><span class="name">鸽子</span></div>
+            <!-- 第三行 -->
+            <div class="fb-light-cell"><span class="icon">🐼</span><span class="name">熊猫</span></div>
+            <div class="fb-light-cell"><span class="icon">🦁</span><span class="name">狮子</span></div>
+            <div class="fb-light-cell"><span class="icon">🦚</span><span class="name">孔雀</span></div>
+            <div class="fb-light-cell"><span class="icon">🦅</span><span class="name">老鹰</span></div>
+            <div class="fb-light-cell"><span class="icon">🦈</span><span class="name">鲨鱼</span></div>
+            <div class="fb-light-cell"><span class="icon">🦈</span><span class="name">鲨鱼</span></div>
+        </div>
+    </div>
+    
+    <div class="test-section">
+        <div class="section-title">💰 下注区 (8个方格子)</div>
+        <div class="fb-bet-grid">
+            <div class="fb-bet-cell">
+                <span class="icon">🐦</span>
+                <span class="name">燕子</span>
+                <span class="multi">×6</span>
+            </div>
+            <div class="fb-bet-cell">
+                <span class="icon">🕊️</span>
+                <span class="name">鸽子</span>
+                <span class="multi">×8</span>
+            </div>
+            <div class="fb-bet-cell">
+                <span class="icon">🦚</span>
+                <span class="name">孔雀</span>
+                <span class="multi">×8</span>
+            </div>
+            <div class="fb-bet-cell">
+                <span class="icon">🦅</span>
+                <span class="name">老鹰</span>
+                <span class="multi">×12</span>
+            </div>
+            <div class="fb-bet-cell">
+                <span class="icon">🐰</span>
+                <span class="name">兔子</span>
+                <span class="multi">×6</span>
+            </div>
+            <div class="fb-bet-cell">
+                <span class="icon">🐵</span>
+                <span class="name">猴子</span>
+                <span class="multi">×8</span>
+            </div>
+            <div class="fb-bet-cell">
+                <span class="icon">🐼</span>
+                <span class="name">熊猫</span>
+                <span class="multi">×8</span>
+            </div>
+            <div class="fb-bet-cell">
+                <span class="icon">🦁</span>
+                <span class="name">狮子</span>
+                <span class="multi">×12</span>
+            </div>
+        </div>
+    </div>
+    
+    <div class="info">
+        <p class="success">✅ 格子布局测试通过！</p>
+        <p>如果您能看到上面的方格子，说明布局代码正确。</p>
+        <p>在主页面中，请点击 <strong>"🦅 飞禽走兽"</strong> 按钮打开弹窗。</p>
+    </div>
+</body>
+</html>

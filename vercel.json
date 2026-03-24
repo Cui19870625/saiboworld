@@ -2,11 +2,42 @@
   "version": 2,
   "builds": [
     {
-      "src": "index.html",
+      "src": "**/*",
       "use": "@vercel/static"
     }
   ],
   "routes": [
+    {
+      "handle": "filesystem"
+    },
+    {
+      "src": "/(.*\\.png)$",
+      "dest": "/public/$1"
+    },
+    {
+      "src": "/(.*\\.jpg)$",
+      "dest": "/public/$1"
+    },
+    {
+      "src": "/(.*\\.jpeg)$",
+      "dest": "/public/$1"
+    },
+    {
+      "src": "/(.*\\.gif)$",
+      "dest": "/public/$1"
+    },
+    {
+      "src": "/(.*\\.svg)$",
+      "dest": "/public/$1"
+    },
+    {
+      "src": "/skills/(.*)",
+      "dest": "/public/skills/$1"
+    },
+    {
+      "src": "/equipment/(.*)",
+      "dest": "/public/equipment/$1"
+    },
     {
       "src": "/(.*)",
       "dest": "/index.html"
