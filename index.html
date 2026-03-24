@@ -10889,15 +10889,14 @@
     <!-- 新人红包弹窗 -->
     <div class="gift-modal" id="newUserGiftModal">
         <div class="gift-content">
-            <div class="gift-title"><span class="icon icon-lg" style="color:var(--icon-red);"><svg viewBox="0 0 24 24"><path d="M20 12v10H4V12M2 7h20v5H2zM12 22V7M12 7H7.5a2.5 2.5 0 010-5C11 2 12 7 12 7zM12 7h4.5a2.5 2.5 0 000-5C13 2 12 7 12 7z"/></svg></span> 初入赛博世界 · 有礼相赠</div>
-            <div class="gift-desc">恭喜勇者踏入赛博数码世界！祝您旅途愉快，快意恩仇。</div>
+            <div class="gift-title"><span class="icon icon-lg" style="color:var(--icon-red);"><svg viewBox="0 0 24 24"><path d="M20 12v10H4V12M2 7h20v5H2zM12 22V7M12 7H7.5a2.5 2.5 0 010-5C11 2 12 7 12 7zM12 7h4.5a2.5 2.5 0 000-5C13 2 12 7 12 7z"/></svg></span> 新人启动资金 · 助您启程</div>
+            <div class="gift-desc">金币不足时可领取启动资金，助您在赛博世界畅快冒险！</div>
             <div class="gift-reward">
-                <div class="gift-item"><span class="icon icon-sm icon-silver"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M16 8h-6a2 2 0 100 4h4a2 2 0 110 4H8"/><path d="M12 6v12"/></svg></span> 金币 ×88</div>
-                <div class="gift-item"><span class="icon icon-sm icon-purple"><svg viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></span> 积分 ×50</div>
-                <div class="gift-item"><span class="icon icon-sm icon-gold"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></span> 新手头像框 ×1</div>
+                <div class="gift-item"><span class="icon icon-sm icon-silver"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M16 8h-6a2 2 0 100 4h4a2 2 0 110 4H8"/><path d="M12 6v12"/></svg></span> 金币补充至 <strong id="giftSilverAmount">10000</strong></div>
             </div>
+            <div id="giftConditionTip" style="color:#ffd700;font-size:13px;margin:10px 0;">✓ 当前金币低于10000，可以领取</div>
             <button class="gift-btn" id="getGiftBtn" onclick="getNewUserGift()">立即领取</button>
-            <div class="gift-tip">每个账号仅限领取1次</div>
+            <div class="gift-tip">每个账号仅限领取1次 | 仅限金币低于10000时领取</div>
         </div>
     </div>
 
@@ -13373,23 +13372,57 @@
 
         // ========== 新人红包功能 ==========
         function openNewUserGift() {
+            // 检查是否已领取
             if (gameData.hasGotNewGift) {
-                addChatMessage('bottom', getTime(), '系统', '系统', '您已领取过新人福利，无法再次领取！');
+                addChatMessage('bottom', getTime(), '系统', '系统', '您已领取过新人启动资金，无法再次领取！');
                 return;
             }
+            
+            // 检查金币是否低于10000
+            const currentSilver = gameData.player.silver || 0;
+            if (currentSilver >= 10000) {
+                addChatMessage('bottom', getTime(), '系统', '系统', '您的金币已达到10000或以上，无需领取启动资金！');
+                return;
+            }
+            
+            // 更新显示的金额
+            const giftAmountEl = document.getElementById('giftSilverAmount');
+            const conditionTipEl = document.getElementById('giftConditionTip');
+            const getBtn = document.getElementById('getGiftBtn');
+            
+            if (giftAmountEl) {
+                giftAmountEl.textContent = '10000（当前: ' + currentSilver.toLocaleString() + '）';
+            }
+            if (conditionTipEl) {
+                conditionTipEl.innerHTML = '✓ 当前金币 ' + currentSilver.toLocaleString() + '，可领取 ' + (10000 - currentSilver).toLocaleString() + ' 金币';
+                conditionTipEl.style.color = '#4ade80';
+            }
+            if (getBtn) {
+                getBtn.textContent = '立即领取';
+                getBtn.classList.remove('btn-disabled');
+                getBtn.disabled = false;
+            }
+            
             document.getElementById('newUserGiftModal').classList.add('active');
         }
 
         function getNewUserGift() {
             if (gameData.hasGotNewGift) return;
-
-            // 发放资产
-            gameData.player.silver += 88;
-            gameData.player.spirit += 50;
             
-            // 添加头像框到背包
-            gameData.inventory.push({ name: '新手头像框', count: 1 });
+            // 再次检查金币是否低于10000
+            const currentSilver = gameData.player.silver || 0;
+            if (currentSilver >= 10000) {
+                addChatMessage('bottom', getTime(), '系统', '系统', '您的金币已达到10000或以上，无需领取启动资金！');
+                document.getElementById('newUserGiftModal').classList.remove('active');
+                return;
+            }
+            
+            // 计算需要补充的金币
+            const addAmount = 10000 - currentSilver;
 
+            // 发放金币差额
+            gameData.player.silver = 10000;
+            
             // 状态锁定
             gameData.hasGotNewGift = true;
             saveGameData();
@@ -13397,8 +13430,10 @@
             // 更新UI
             updatePlayerInfo();
             document.getElementById('newUserGiftBtn').classList.add('btn-disabled');
-            document.getElementById('getGiftBtn').textContent = '已领取';
-            document.getElementById('getGiftBtn').classList.add('btn-disabled');
+            const getBtn = document.getElementById('getGiftBtn');
+            getBtn.textContent = '已领取';
+            getBtn.classList.add('btn-disabled');
+            getBtn.disabled = true;
 
             // 关闭弹窗
             setTimeout(() => {
@@ -13406,7 +13441,7 @@
             }, 800);
 
             // 公屏系统提示
-            addChatMessage('bottom', getTime(), '系统', '系统', `【系统】恭喜「${gameData.player.name}」领取新人红包，获得金币×88、积分×50、新手头像框×1，赛博世界之路从此启程！`);
+            addChatMessage('bottom', getTime(), '系统', '系统', `【系统】恭喜「${gameData.player.name}」领取新人启动资金，获得金币×${addAmount.toLocaleString()}，当前金币：10000！`);
         }
 
         // ========== 赛博世界签到功能 ==========
@@ -23963,12 +23998,9 @@
                     initGame();
                 }
                 
-                // 确保金币不低于10000
+                // 确保玩家数据存在（不再自动补充金币，由新人红包领取）
                 if (!gameData.player) {
-                    gameData.player = { silver: 10000 };
-                }
-                if (gameData.player.silver < 10000) {
-                    gameData.player.silver = 10000;
+                    gameData.player = { silver: 0 };
                 }
                 
                 // 保存数据
@@ -24530,13 +24562,9 @@
                     if (gameData.player.dodge < 0 || isNaN(gameData.player.dodge)) {
                         gameData.player.dodge = 0;
                     }
-                    // 确保金币和钻石非负，且金币不低于10000（玩家保底金币）
+                    // 确保金币和钻石非负（不再自动补充金币，由新人红包领取）
                     if (gameData.player.silver < 0 || isNaN(gameData.player.silver)) {
                         gameData.player.silver = 0;
-                    }
-                    if (gameData.player.silver < 10000) {
-                        gameData.player.silver = 10000;  // 自动补充到10000
-                        console.log('💰 金币不足10000，已自动补充至10000');
                     }
                     if (gameData.player.spirit < 0 || isNaN(gameData.player.spirit)) {
                         gameData.player.spirit = 0;
@@ -26513,12 +26541,12 @@
         function startNewRaceRound() {
             console.log('🏁 === 开始新一局比赛 === 局号:', raceGlobalState.roundNumber);
             
-            // 确保金币存在且不低于10000（玩家保底金币）
+            // 确保玩家数据存在（不再自动补充金币）
             if (!gameData.player) {
-                gameData.player = { silver: 10000 };
+                gameData.player = { silver: 0 };
             }
-            if (!gameData.player.silver || gameData.player.silver < 10000) {
-                gameData.player.silver = 10000;
+            if (!gameData.player.silver || gameData.player.silver < 0) {
+                gameData.player.silver = Math.max(0, gameData.player.silver || 0);
             }
             
             // 重置状态
@@ -26591,18 +26619,18 @@
             updateRacePhaseDisplay('betting', raceGlobalState.countdown);
             announceEvent('💰 下注开始！选择你看好的守护灵下注！');
             
-            // 确保金币存在
+            // 确保玩家数据存在（不再自动补充金币）
             if (!gameData.player) {
-                gameData.player = { silver: 10000 };
+                gameData.player = { silver: 0 };
             }
-            if (!gameData.player.silver || gameData.player.silver < 100) {
-                gameData.player.silver = 10000;
+            if (!gameData.player.silver || gameData.player.silver < 0) {
+                gameData.player.silver = 0;
             }
             
             // 更新金币显示
             const goldDisplay = document.getElementById('playerGoldDisplay');
             if (goldDisplay) {
-                goldDisplay.textContent = (gameData.player.silver || 10000).toLocaleString();
+                goldDisplay.textContent = (gameData.player.silver || 0).toLocaleString();
             }
             
             // 启用下注按钮
@@ -28990,12 +29018,12 @@
                 return;
             }
             if (!gameData.player) {
-                gameData.player = { silver: 10000 };
+                gameData.player = { silver: 0 };
             }
             
-            // 确保金币不低于10000（玩家保底金币）
-            if (gameData.player.silver < 10000) {
-                gameData.player.silver = 10000;
+            // 确保金币非负（不再自动补充，由新人红包领取）
+            if (gameData.player.silver < 0 || isNaN(gameData.player.silver)) {
+                gameData.player.silver = 0;
             }
             
             const modal = document.getElementById('flyingBeastsModal');
