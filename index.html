@@ -30016,6 +30016,9 @@
             syncFBDisplay();
         }
         
+        // 挂载到 window 对象
+        window.openFlyingBeasts = openFlyingBeasts;
+        
         // 同步飞禽走兽显示状态 - 支持自动走灯和结果显示
         function syncFBDisplay() {
             console.log('🔄 同步飞禽走兽显示状态...');
@@ -30443,6 +30446,9 @@
             document.getElementById('flyingBeastsModal').style.display = 'none';
         }
         
+        // 挂载到 window 对象
+        window.closeFlyingBeasts = closeFlyingBeasts;
+        
         // 初始化界面 - 赛博霓虹风格
         function initFlyingBeastsUI() {
             console.log('🎨 初始化飞禽走兽界面 v5...');
@@ -30730,6 +30736,9 @@
             showFBMessage(`已押注 ${animal.emoji} ${animal.name} ${amount}银币 (累计${newBet ? newBet.amount : 0})`, 'success');
         }
         
+        // 挂载到 window 对象，确保 onclick 可以调用
+        window.fbBetAnimal = fbBetAnimal;
+        
         // 押注大区 - 赛博霓虹风格
         async function fbBetZone(zone) {
             if (fbState.phase !== 'betting') {
@@ -30750,6 +30759,9 @@
             
             showFBMessage(`已押注 ${zone === 'flying' ? '飞禽区' : '走兽区'} ${amount}银币`, 'success');
         }
+        
+        // 挂载到 window 对象
+        window.fbBetZone = fbBetZone;
         
         // 验证押注
         function validateFBBet(target, type, amount, odds) {
@@ -30883,6 +30895,9 @@
             });
         }
         
+        // 挂载到 window 对象
+        window.fbSelectChip = fbSelectChip;
+        
         // 确认押注
         function fbConfirmBets() {
             if (fbState.phase !== 'betting') {
@@ -30931,6 +30946,9 @@
             showFBMessage('已清空押注', 'info');
             console.log('✅ 清空完成');
         }
+        
+        // 挂载到 window 对象
+        window.fbClearBets = fbClearBets;
         
         // 显示规则
         function fbShowRules() {
@@ -32538,6 +32556,9 @@
             showFBMessage(`续押成功！共 ${totalAmount} 银币`, 'success');
             console.log('✅ 续押完成');
         }
+        
+        // 挂载到 window 对象
+        window.fbContinueBet = fbContinueBet;
         
         // 显示规则
         function fbShowRules() {
