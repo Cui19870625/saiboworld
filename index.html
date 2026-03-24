@@ -10262,52 +10262,43 @@
                     { p: 100, t: '准备就绪！' }
                 ];
                 
-                // 等待主脚本加载完成
-                var maxWait = 15000;
-                var startTime = Date.now();
-                var mainScriptReady = false;
-                
-                while (!mainScriptReady && (Date.now() - startTime) < maxWait) {
-                    // 检查主脚本是否加载完成
-                    try {
-                        mainScriptReady = typeof gameData !== 'undefined' && 
-                                          typeof window.initGame === 'function';
-                    } catch(e) {
-                        mainScriptReady = false;
-                    }
-                    
-                    if (!mainScriptReady) {
-                        await new Promise(function(resolve) { setTimeout(resolve, 200); });
-                    }
-                }
-                
-                if (!mainScriptReady) {
-                    console.warn('⚠️ 主脚本加载超时，直接进入');
-                }
-                
                 // 显示进度
                 for (var i = 0; i < steps.length; i++) {
                     updateProgress(steps[i].p, steps[i].t);
-                    await new Promise(function(resolve) { setTimeout(resolve, 150); });
+                    await new Promise(function(resolve) { setTimeout(resolve, 100); });
                 }
                 
-                // 调用主脚本的初始化函数
-                if (typeof window.initGame === 'function') {
+                // 调用真正的 Supabase 登录
+                if (typeof window.doSupabaseLogin === 'function') {
                     try {
-                        window.initGame();
+                        await window.doSupabaseLogin(username, password);
+                        // doSupabaseLogin 成功后会隐藏登录框并初始化游戏
+                        hideLoginAndEnter();
                     } catch(e) {
-                        console.warn('⚠️ 初始化失败:', e);
+                        console.error('Supabase登录失败:', e);
+                        // 登录失败，显示错误并恢复登录表单
+                        alert(e.message || '登录失败，请稍后重试');
+                        var loginForm = document.getElementById('loginForm');
+                        var loadingProgress = document.getElementById('loadingProgress');
+                        if (loginForm) loginForm.style.display = 'block';
+                        if (loadingProgress) loadingProgress.style.display = 'none';
+                        return;
                     }
+                } else {
+                    // 备用：直接初始化游戏（本地模式）
+                    console.warn('⚠️ doSupabaseLogin 未定义，使用本地模式');
+                    if (typeof window.initGame === 'function') {
+                        try {
+                            window.initGame();
+                        } catch(e) {
+                            console.warn('⚠️ 初始化失败:', e);
+                        }
+                    }
+                    if (typeof gameData !== 'undefined' && gameData.player) {
+                        gameData.player.name = username;
+                    }
+                    hideLoginAndEnter();
                 }
-                
-                // 设置用户名
-                if (typeof gameData !== 'undefined' && gameData.player) {
-                    gameData.player.name = username;
-                }
-                
-                // 隐藏登录框
-                await new Promise(function(resolve) { setTimeout(resolve, 300); });
-                hideLoginAndEnter();
                 
                 console.log('✅ 所有加载步骤完成');
             }
@@ -22930,11 +22921,10 @@
                 
                 if (error) {
                     if (error.message.includes('Invalid login credentials')) {
-                        alert('用户名或密码错误');
+                        throw new Error('用户名或密码错误');
                     } else {
-                        alert('登录失败: ' + error.message);
+                        throw new Error('登录失败: ' + error.message);
                     }
-                    return;
                 }
                 
                 // 登录成功
@@ -22980,9 +22970,11 @@
                     addChatMessage('top', getTime(), '系统', '系统', '💡 发送口令【玄铁降临】【神兵强化】【赛博世界无敌】【挂机暴富】可领取福利（每日一次）');
                 }, 500);
                 
+                return true; // 登录成功
+                
             } catch (e) {
                 console.error('登录失败:', e);
-                alert('登录失败，请稍后重试');
+                throw e; // 抛出错误让调用者处理
             }
         }
 
