@@ -23401,6 +23401,50 @@
             }
         }
         
+        // ========== 飞禽走兽全局同步系统 ==========
+        // 使用服务器时间同步，所有玩家看到相同的开奖结果
+        // 注意：这些配置必须在 initFlyingBeastsBackground 之前定义！        
+        // 全局同步配置
+        const FB_GLOBAL = {
+            // 全局起始时间：2024-01-01 00:00:00 UTC（固定不变）
+            EPOCH: new Date('2024-01-01T00:00:00Z').getTime(),
+            // 每局总时长（毫秒）：下注45秒 + 走灯15秒 + 结果5秒 = 65秒
+            CYCLE_TIME: 65000,
+            // 各阶段时长（毫秒）
+            BET_TIME: 45000,
+            SPIN_TIME: 15000,
+            RESULT_TIME: 5000
+        };
+        
+        // 计算当前全局状态（必须在 initFlyingBeastsBackground 之前定义）
+        function fbGetGlobalState() {
+            const now = Date.now();
+            const elapsed = now - FB_GLOBAL.EPOCH;
+            const cycleOffset = elapsed % FB_GLOBAL.CYCLE_TIME;
+            const roundNumber = Math.floor(elapsed / FB_GLOBAL.CYCLE_TIME) + 10001;
+            
+            let phase, countdown, phaseEndTime;
+            
+            if (cycleOffset < FB_GLOBAL.BET_TIME) {
+                // 下注阶段
+                phase = 'betting';
+                countdown = Math.ceil((FB_GLOBAL.BET_TIME - cycleOffset) / 1000);
+                phaseEndTime = FB_GLOBAL.EPOCH + Math.floor(elapsed / FB_GLOBAL.CYCLE_TIME) * FB_GLOBAL.CYCLE_TIME + FB_GLOBAL.BET_TIME;
+            } else if (cycleOffset < FB_GLOBAL.BET_TIME + FB_GLOBAL.SPIN_TIME) {
+                // 走灯阶段
+                phase = 'spinning';
+                countdown = Math.ceil((FB_GLOBAL.BET_TIME + FB_GLOBAL.SPIN_TIME - cycleOffset) / 1000);
+                phaseEndTime = FB_GLOBAL.EPOCH + Math.floor(elapsed / FB_GLOBAL.CYCLE_TIME) * FB_GLOBAL.CYCLE_TIME + FB_GLOBAL.BET_TIME + FB_GLOBAL.SPIN_TIME;
+            } else {
+                // 结果阶段
+                phase = 'result';
+                countdown = Math.ceil((FB_GLOBAL.CYCLE_TIME - cycleOffset) / 1000);
+                phaseEndTime = FB_GLOBAL.EPOCH + (Math.floor(elapsed / FB_GLOBAL.CYCLE_TIME) + 1) * FB_GLOBAL.CYCLE_TIME;
+            }
+            
+            return { roundNumber, phase, countdown, phaseEndTime, cycleOffset };
+        }
+        
         // ========== 飞禽走兽下注实时同步 ==========
         let fbCurrentRoundBets = [];  // 当前局所有玩家的下注
         
@@ -29882,49 +29926,7 @@
             }
         }
 
-        // ========== 飞禽走兽全局同步系统 ==========
-        // 使用服务器时间同步，所有玩家看到相同的开奖结果
-        
-        // 全局同步配置
-        const FB_GLOBAL = {
-            // 全局起始时间：2024-01-01 00:00:00 UTC（固定不变）
-            EPOCH: new Date('2024-01-01T00:00:00Z').getTime(),
-            // 每局总时长（毫秒）：下注45秒 + 走灯15秒 + 结果5秒 = 65秒
-            CYCLE_TIME: 65000,
-            // 各阶段时长（毫秒）
-            BET_TIME: 45000,
-            SPIN_TIME: 15000,
-            RESULT_TIME: 5000
-        };
-        
-        // 计算当前全局状态
-        function fbGetGlobalState() {
-            const now = Date.now();
-            const elapsed = now - FB_GLOBAL.EPOCH;
-            const cycleOffset = elapsed % FB_GLOBAL.CYCLE_TIME;
-            const roundNumber = Math.floor(elapsed / FB_GLOBAL.CYCLE_TIME) + 10001;
-            
-            let phase, countdown, phaseEndTime;
-            
-            if (cycleOffset < FB_GLOBAL.BET_TIME) {
-                // 下注阶段
-                phase = 'betting';
-                countdown = Math.ceil((FB_GLOBAL.BET_TIME - cycleOffset) / 1000);
-                phaseEndTime = FB_GLOBAL.EPOCH + Math.floor(elapsed / FB_GLOBAL.CYCLE_TIME) * FB_GLOBAL.CYCLE_TIME + FB_GLOBAL.BET_TIME;
-            } else if (cycleOffset < FB_GLOBAL.BET_TIME + FB_GLOBAL.SPIN_TIME) {
-                // 走灯阶段
-                phase = 'spinning';
-                countdown = Math.ceil((FB_GLOBAL.BET_TIME + FB_GLOBAL.SPIN_TIME - cycleOffset) / 1000);
-                phaseEndTime = FB_GLOBAL.EPOCH + Math.floor(elapsed / FB_GLOBAL.CYCLE_TIME) * FB_GLOBAL.CYCLE_TIME + FB_GLOBAL.BET_TIME + FB_GLOBAL.SPIN_TIME;
-            } else {
-                // 结果阶段
-                phase = 'result';
-                countdown = Math.ceil((FB_GLOBAL.CYCLE_TIME - cycleOffset) / 1000);
-                phaseEndTime = FB_GLOBAL.EPOCH + (Math.floor(elapsed / FB_GLOBAL.CYCLE_TIME) + 1) * FB_GLOBAL.CYCLE_TIME;
-            }
-            
-            return { roundNumber, phase, countdown, phaseEndTime, cycleOffset };
-        }
+        // 注意：FB_GLOBAL 和 fbGetGlobalState 已移动到文件前面（第23404行，在 initFlyingBeastsBackground 之前定义）
         
         // 从数据库加载开奖历史
         async function fbLoadHistoryFromDB() {
