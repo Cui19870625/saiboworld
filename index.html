@@ -24586,11 +24586,30 @@
                             won = true;
                         }
                     } else if (result.type === 'tongpei') {
+                        // 通赔：所有下注都赢
                         if (bet.type === 'animal') {
                             const animal = FB_CONFIG.animals.find(a => a.id === bet.target);
                             if (animal) {
                                 winAmount = Math.floor(bet.amount * animal.odds);
                                 won = true;
+                            }
+                        } else if (bet.type === 'zone') {
+                            winAmount = Math.floor(bet.amount * 2);
+                            won = true;
+                        }
+                    } else if (result.type === 'shark') {
+                        // 金鲨：所有下注都赢
+                        const sharkOdds = fbState.sharkDynamicOdds || 30;
+                        if (bet.type === 'animal') {
+                            if (bet.target === 'shark') {
+                                winAmount = Math.floor(bet.amount * sharkOdds);
+                                won = true;
+                            } else {
+                                const animal = FB_CONFIG.animals.find(a => a.id === bet.target);
+                                if (animal) {
+                                    winAmount = Math.floor(bet.amount * animal.odds);
+                                    won = true;
+                                }
                             }
                         } else if (bet.type === 'zone') {
                             winAmount = Math.floor(bet.amount * 2);
@@ -24705,11 +24724,30 @@
                             won = true;
                         }
                     } else if (result.type === 'tongpei') {
+                        // 通赔：所有下注都赢
                         if (bet.type === 'animal') {
                             const animal = FB_CONFIG.animals.find(a => a.id === bet.target);
                             if (animal) {
                                 winAmount = Math.floor(bet.amount * animal.odds);
                                 won = true;
+                            }
+                        } else if (bet.type === 'zone') {
+                            winAmount = Math.floor(bet.amount * 2);
+                            won = true;
+                        }
+                    } else if (result.type === 'shark') {
+                        // 金鲨：所有下注都赢
+                        const sharkOdds = fbState.sharkDynamicOdds || 30;
+                        if (bet.type === 'animal') {
+                            if (bet.target === 'shark') {
+                                winAmount = Math.floor(bet.amount * sharkOdds);
+                                won = true;
+                            } else {
+                                const animal = FB_CONFIG.animals.find(a => a.id === bet.target);
+                                if (animal) {
+                                    winAmount = Math.floor(bet.amount * animal.odds);
+                                    won = true;
+                                }
                             }
                         } else if (bet.type === 'zone') {
                             winAmount = Math.floor(bet.amount * 2);
@@ -31749,75 +31787,43 @@
                     }
                 });
             } else if (result.type === 'shark') {
-                // 金鲨鱼开奖 - 使用动态倍率
+                // 金鲨开奖 - 所有人都中奖（类似通赔）
                 const secondAnimal = result.secondAnimal;
                 const secondAnimalObj = FB_CONFIG.animals.find(a => a.id === secondAnimal);
                 
                 // 获取动态倍率
-                const sharkOdds = fbState.sharkDynamicOdds || 24;
+                const sharkOdds = fbState.sharkDynamicOdds || 30;
                 result.odds = sharkOdds;
                 
-                // 检查是否有人押注金鲨
-                const sharkBet = betsToProcess.find(bet => bet.type === 'animal' && bet.target === 'shark');
+                console.log('🦈 金鲨开奖！所有下注都中奖！动态倍率:', sharkOdds, '第二动物:', secondAnimal);
                 
-                console.log('🦈 金鲨开奖，动态倍率:', sharkOdds, '第二动物:', secondAnimal, '金鲨下注:', sharkBet);
-                
-                if (sharkBet) {
-                    // 金鲨有下注：按动态倍率计算，第二动物也按倍率计算
-                    console.log('✅ 金鲨有下注，按动态倍率计算:', sharkOdds);
-                    betsToProcess.forEach(bet => {
-                        let winAmount = 0;
-                        
-                        // 金鲨按动态倍率计算
-                        if (bet.type === 'animal' && bet.target === 'shark') {
+                // 金鲨开奖 = 所有人都赢！
+                betsToProcess.forEach(bet => {
+                    let winAmount = 0;
+                    
+                    if (bet.type === 'animal') {
+                        if (bet.target === 'shark') {
+                            // 金鲨按动态倍率计算
                             winAmount = Math.floor(bet.amount * sharkOdds);
-                        }
-                        // 第二个动物按其倍率
-                        if (bet.type === 'animal' && bet.target === secondAnimal) {
-                            if (secondAnimalObj) {
-                                winAmount = Math.floor(bet.amount * secondAnimalObj.odds);
+                        } else {
+                            // 其他动物按各自倍率计算
+                            const animal = FB_CONFIG.animals.find(a => a.id === bet.target);
+                            if (animal) {
+                                winAmount = Math.floor(bet.amount * animal.odds);
                             }
                         }
-                        // 飞禽区（金鲨属于飞禽，第二动物如果是飞禽也算）
-                        if (bet.type === 'zone' && bet.target === 'flying') {
-                            winAmount = Math.floor(bet.amount * 2);
-                        }
-                        // 走兽区（第二个动物如果是走兽）
-                        if (bet.type === 'zone' && bet.target === 'beast') {
-                            if (secondAnimalObj && secondAnimalObj.zone === 'beast') {
-                                winAmount = Math.floor(bet.amount * 2);
-                            }
-                        }
-                        
-                        if (winAmount > 0) {
-                            totalWin += winAmount;
-                            winDetails.push({ target: bet.target, amount: winAmount });
-                        }
-                    });
-                } else {
-                    // 金鲨没有下注：其他下注退回，跳灯的动物得分
-                    console.log('⚠️ 金鲨无下注，其他下注退回，第二动物得分');
-                    betsToProcess.forEach(bet => {
-                        let winAmount = 0;
-                        
-                        // 第二个动物按其倍率计算
-                        if (bet.type === 'animal' && bet.target === secondAnimal) {
-                            if (secondAnimalObj) {
-                                winAmount = Math.floor(bet.amount * secondAnimalObj.odds);
-                            }
-                        }
-                        // 其他动物下注退回（不赢不输）
-                        else if (bet.type === 'animal' && bet.target !== 'shark') {
-                            winAmount = bet.amount; // 退回本金
-                        }
-                        // 区域下注：如果第二动物属于该区域则赢，否则退回
-                        else if (bet.type === 'zone') {
-                            if (secondAnimalObj && secondAnimalObj.zone === bet.target) {
-                                winAmount = Math.floor(bet.amount * 2);
-                            } else {
-                                winAmount = bet.amount; // 退回本金
-                            }
-                        }
+                    } else if (bet.type === 'zone') {
+                        // 区域下注按2倍
+                        winAmount = Math.floor(bet.amount * 2);
+                    }
+                    
+                    if (winAmount > 0) {
+                        totalWin += winAmount;
+                        winDetails.push({ target: bet.target, amount: winAmount });
+                    }
+                });
+                
+                console.log('🦈 金鲨结算完成，总赢:', totalWin, '详情:', winDetails);
                         
                         if (winAmount > 0) {
                             totalWin += winAmount;
