@@ -22986,6 +22986,9 @@
                 // 检查离线收益
                 checkOfflineRewards();
                 
+                // 初始化聊天系统（WebSocket实时订阅）- 必须在登录后初始化
+                await initChatSync();
+                
                 // 初始化其他系统
                 initDeathSystem();
                 initActivitySystem();
@@ -22998,6 +23001,12 @@
                 checkSignInStatus();
                 initOnlinePlayers();
                 initCloudSave();
+                
+                // 启动飞禽走兽后台运行
+                initFlyingBeastsBackground();
+                
+                // 启动守护灵竞技场后台运行
+                initRacingArenaBackground();
                 
                 // 发送欢迎消息
                 setTimeout(() => {
@@ -23376,11 +23385,14 @@
         }
 
         // 计算战力
+        // 计算战力（在线玩家系统使用）
         function calculatePower() {
-            const attack = gameData.player.attack || 0;
-            const defense = gameData.player.defense || 0;
-            const hp = gameData.player.maxHp || 100;
-            return Math.floor(attack * 2 + defense * 1.5 + hp * 0.5);
+            const p = gameData.player;
+            if (!p) return 0;
+            const base = (p.attack || 0) * 2 + (p.defense || 0) * 1.5 + (p.maxHp || 100) * 0.5 + (p.speed || 10);
+            const bonus = (p.crit || 0) * 10 + (p.dodge || 0) * 10;
+            const realmBonus = (gameData.realmLevel || 0) * 50;
+            return Math.floor(base + bonus + realmBonus);
         }
 
         // ========== 云存档系统 ==========
