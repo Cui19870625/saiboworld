@@ -23002,6 +23002,9 @@
                 initOnlinePlayers();
                 initCloudSave();
                 
+                // 初始化所有实时同步（网络同步系统）
+                initAllRealtimeSync();
+                
                 // 启动飞禽走兽后台运行
                 initFlyingBeastsBackground();
                 
@@ -23227,6 +23230,338 @@
         let supabaseClient = null;
         let onlinePlayerId = null;
         let heartbeatInterval = null;
+        
+        // ========== 网络同步系统 ==========
+        // 所有游戏数据实时同步，确保所有玩家看到相同的信息
+        
+        // 全局同步状态
+        let globalSyncState = {
+            onlinePlayersChannel: null,
+            fbBetsChannel: null,
+            raceBetsChannel: null,
+            initialized: false
+        };
+        
+        // 初始化所有实时同步
+        async function initAllRealtimeSync() {
+            if (globalSyncState.initialized || !supabaseClient) return;
+            globalSyncState.initialized = true;
+            
+            console.log('🌐 初始化网络同步系统...');
+            
+            // 1. 在线玩家实时同步
+            initOnlinePlayersRealtime();
+            
+            // 2. 飞禽走兽下注实时同步
+            initFBBetsRealtime();
+            
+            // 3. 守护灵竞技场下注实时同步
+            initRaceBetsRealtime();
+            
+            console.log('✅ 网络同步系统初始化完成');
+        }
+        
+        // ========== 在线玩家实时同步 ==========
+        function initOnlinePlayersRealtime() {
+            if (!supabaseClient) return;
+            
+            try {
+                globalSyncState.onlinePlayersChannel = supabaseClient
+                    .channel('online-players-sync')
+                    .on(
+                        'postgres_changes',
+                        {
+                            event: '*',  // 监听所有事件：INSERT, UPDATE, DELETE
+                            schema: 'public',
+                            table: 'online_players'
+                        },
+                        (payload) => {
+                            console.log('👤 在线玩家变化:', payload.eventType, payload.new || payload.old);
+                            
+                            // 刷新在线玩家列表
+                            fetchOnlinePlayers();
+                            
+                            // 更新在线玩家数量显示
+                            if (payload.eventType === 'INSERT') {
+                                addChatMessage('top', getTime(), '系统', '系统', `🟢 ${payload.new.player_name} 进入了游戏`);
+                            } else if (payload.eventType === 'DELETE') {
+                                const name = payload.old?.player_name || '玩家';
+                                addChatMessage('top', getTime(), '系统', '系统', `🔴 ${name} 离开了游戏`);
+                            }
+                        }
+                    )
+                    .subscribe((status) => {
+                        console.log('📡 在线玩家同步状态:', status);
+                    });
+            } catch (e) {
+                console.error('在线玩家实时同步初始化失败:', e);
+            }
+        }
+        
+        // ========== 飞禽走兽下注实时同步 ==========
+        let fbCurrentRoundBets = [];  // 当前局所有玩家的下注
+        
+        function initFBBetsRealtime() {
+            if (!supabaseClient) return;
+            
+            try {
+                globalSyncState.fbBetsChannel = supabaseClient
+                    .channel('flying-beasts-bets-sync')
+                    .on(
+                        'postgres_changes',
+                        {
+                            event: 'INSERT',
+                            schema: 'public',
+                            table: 'flying_beasts_bets'
+                        },
+                        (payload) => {
+                            console.log('🎰 收到飞禽走兽下注:', payload.new);
+                            
+                            const bet = payload.new;
+                            
+                            // 添加到当前局下注列表
+                            const exists = fbCurrentRoundBets.some(b => 
+                                b.player_id === bet.player_id && 
+                                b.bet_target === bet.bet_target &&
+                                b.bet_type === bet.bet_type
+                            );
+                            
+                            if (!exists) {
+                                fbCurrentRoundBets.push(bet);
+                                
+                                // 更新下注显示界面
+                                updateFBBetsDisplay();
+                                
+                                // 显示下注提示（不是自己下的注才显示）
+                                if (bet.player_id !== onlinePlayerId) {
+                                    const targetName = getFBTargetName(bet.bet_type, bet.bet_target);
+                                    addChatMessage('top', getTime(), '系统', '系统', 
+                                        `🎰 ${bet.player_name} 在【${targetName}】下注 ${formatNumber(bet.bet_amount)} 金币`);
+                                }
+                            }
+                        }
+                    )
+                    .subscribe((status) => {
+                        console.log('📡 飞禽走兽下注同步状态:', status);
+                    });
+            } catch (e) {
+                console.error('飞禽走兽下注同步初始化失败:', e);
+            }
+        }
+        
+        // 获取下注目标名称
+        function getFBTargetName(betType, target) {
+            if (betType === 'zone') {
+                return target === 'flying' ? '飞禽区' : '走兽区';
+            } else {
+                const animal = FB_CONFIG.animals.find(a => a.id === target);
+                return animal ? animal.name : target;
+            }
+        }
+        
+        // 更新下注显示界面
+        function updateFBBetsDisplay() {
+            console.log('📊 更新下注显示，当前下注数:', fbCurrentRoundBets.length);
+            
+            const animals = ['swallow', 'pigeon', 'peacock', 'eagle', 'shark', 'lion', 'panda', 'monkey', 'rabbit'];
+            
+            // 更新每个动物的总下注显示
+            animals.forEach(animalId => {
+                // 计算该动物的总下注
+                const totalBet = fbCurrentRoundBets
+                    .filter(b => b.bet_type === 'animal' && b.bet_target === animalId)
+                    .reduce((sum, b) => sum + b.bet_amount, 0);
+                
+                // 更新总下注显示（金色）
+                const totalBetEl = document.getElementById(`total-bet-${animalId}`);
+                if (totalBetEl) {
+                    totalBetEl.textContent = totalBet > 0 ? formatNumber(totalBet) : '';
+                }
+                
+                // 更新我的下注显示（绿色）
+                const myBet = fbState.bets.find(b => b.target === animalId);
+                const myBetEl = document.getElementById(`my-bet-${animalId}`);
+                if (myBetEl) {
+                    myBetEl.textContent = myBet && myBet.amount > 0 ? formatNumber(myBet.amount) : '';
+                }
+            });
+            
+            // 更新区域下注显示
+            updateFBZoneDisplay('flying');
+            updateFBZoneDisplay('beast');
+            
+            console.log('📊 下注显示已更新');
+        }
+        
+        // 保存下注到数据库
+        async function saveFBBetToDB(bet) {
+            if (!supabaseClient) return false;
+            
+            try {
+                const { error } = await supabaseClient
+                    .from('flying_beasts_bets')
+                    .insert({
+                        round_number: fbState.roundNumber,
+                        player_id: onlinePlayerId || 'guest_' + Date.now(),
+                        player_name: gameData.player.name || '游客',
+                        bet_type: bet.type,
+                        bet_target: bet.target,
+                        bet_amount: bet.amount
+                    });
+                
+                if (error) {
+                    console.error('保存飞禽走兽下注失败:', error);
+                    return false;
+                }
+                
+                // 同时添加到本地列表
+                fbCurrentRoundBets.push({
+                    round_number: fbState.roundNumber,
+                    player_id: onlinePlayerId,
+                    player_name: gameData.player.name,
+                    bet_type: bet.type,
+                    bet_target: bet.target,
+                    bet_amount: bet.amount
+                });
+                
+                return true;
+            } catch (e) {
+                console.error('保存飞禽走兽下注异常:', e);
+                return false;
+            }
+        }
+        
+        // 加载当前局的所有下注
+        async function loadFBCurrentRoundBets() {
+            if (!supabaseClient) {
+                console.log('📊 无数据库连接，仅显示本地下注');
+                // 即使没有数据库，也要更新显示
+                updateFBBetsDisplay();
+                return;
+            }
+            
+            try {
+                const { data, error } = await supabaseClient
+                    .from('flying_beasts_bets')
+                    .select('*')
+                    .eq('round_number', fbState.roundNumber);
+                
+                if (error) {
+                    console.error('加载下注失败:', error);
+                    updateFBBetsDisplay();
+                    return;
+                }
+                
+                if (data && data.length > 0) {
+                    // 合并数据库数据和本地下注
+                    const localPlayerIds = new Set(fbCurrentRoundBets.map(b => b.player_id));
+                    const remoteNewBets = data.filter(b => !localPlayerIds.has(b.player_id));
+                    fbCurrentRoundBets = [...fbCurrentRoundBets, ...remoteNewBets];
+                    
+                    console.log('📊 加载远程下注:', data.length, '条，新加入:', remoteNewBets.length, '条');
+                }
+                
+                // 无论有没有数据，都要更新显示
+                updateFBBetsDisplay();
+                
+            } catch (e) {
+                console.error('加载飞禽走兽下注异常:', e);
+                updateFBBetsDisplay();
+            }
+        }
+        
+        // ========== 守护灵竞技场下注实时同步 ==========
+        let raceCurrentRoundBets = [];  // 当前局所有玩家的下注
+        
+        function initRaceBetsRealtime() {
+            if (!supabaseClient) return;
+            
+            try {
+                globalSyncState.raceBetsChannel = supabaseClient
+                    .channel('racing-arena-bets-sync')
+                    .on(
+                        'postgres_changes',
+                        {
+                            event: 'INSERT',
+                            schema: 'public',
+                            table: 'racing_arena_bets'
+                        },
+                        (payload) => {
+                            console.log('🏁 收到竞技场下注:', payload.new);
+                            
+                            const bet = payload.new;
+                            
+                            // 添加到当前局下注列表
+                            const exists = raceCurrentRoundBets.some(b => 
+                                b.player_id === bet.player_id && 
+                                b.guardian_id === bet.guardian_id
+                            );
+                            
+                            if (!exists) {
+                                raceCurrentRoundBets.push(bet);
+                                
+                                // 显示下注提示（不是自己下的注才显示）
+                                if (bet.player_id !== onlinePlayerId) {
+                                    addChatMessage('top', getTime(), '系统', '系统', 
+                                        `🏁 ${bet.player_name} 在【${bet.guardian_name}】下注 ${formatNumber(bet.bet_amount)} 金币`);
+                                }
+                            }
+                        }
+                    )
+                    .subscribe((status) => {
+                        console.log('📡 竞技场下注同步状态:', status);
+                    });
+            } catch (e) {
+                console.error('竞技场下注同步初始化失败:', e);
+            }
+        }
+        
+        // 保存竞技场下注到数据库
+        async function saveRaceBetToDB(bet) {
+            if (!supabaseClient) return false;
+            
+            try {
+                const { error } = await supabaseClient
+                    .from('racing_arena_bets')
+                    .insert({
+                        round_number: raceGlobalState.roundNumber,
+                        player_id: onlinePlayerId || 'guest_' + Date.now(),
+                        player_name: gameData.player.name || '游客',
+                        guardian_id: bet.guardianId,
+                        guardian_name: bet.guardianName,
+                        bet_type: bet.type,
+                        bet_amount: bet.amount
+                    });
+                
+                if (error) {
+                    console.error('保存竞技场下注失败:', error);
+                    return false;
+                }
+                
+                return true;
+            } catch (e) {
+                console.error('保存竞技场下注异常:', e);
+                return false;
+            }
+        }
+        
+        // 加载当前局的所有竞技场下注
+        async function loadRaceCurrentRoundBets() {
+            if (!supabaseClient) return;
+            
+            try {
+                const { data, error } = await supabaseClient
+                    .from('racing_arena_bets')
+                    .select('*')
+                    .eq('round_number', raceGlobalState.roundNumber);
+                
+                if (data) {
+                    raceCurrentRoundBets = data;
+                }
+            } catch (e) {
+                console.error('加载竞技场下注失败:', e);
+            }
+        }
 
         // 初始化在线玩家系统
         function initOnlinePlayers() {
@@ -24077,52 +24412,232 @@
             console.log('🎮 initGame 完成');
         }
         
-        // 飞禽走兽后台运行初始化 - 全局自动运行版本
-        function initFlyingBeastsBackground() {
-            console.log('🎰 飞禽走兽后台启动（全局自动运行模式）...');
+        // 飞禽走兽后台运行初始化 - 全局同步版本（所有玩家看到相同结果）
+        async function initFlyingBeastsBackground() {
+            console.log('🎰 飞禽走兽后台启动（全局同步模式）...');
             
             // 如果计时器已经在运行，不重复启动
             if (fbState.timer) {
-                console.log('🎰 飞禽走兽已在运行中，当前状态:', fbState.phase);
+                console.log('🎰 飞禽走兽已在运行中');
                 return;
             }
             
-            // 初始化阶段开始时间
-            fbState.phaseStartTime = Date.now();
+            // 初始化 Realtime 订阅
+            await initFBRealtime();
             
-            // 启动全局后台计时器（每秒检查一次状态）
-            fbState.timer = setInterval(() => {
+            // 从数据库加载历史开奖记录
+            const history = await fbLoadHistoryFromDB();
+            if (history.length > 0) {
+                fbState.history = history;
+                console.log('🎰 已加载历史开奖记录:', history.length, '条');
+            }
+            
+            // 获取当前全局状态
+            const globalState = fbGetGlobalState();
+            fbState.roundNumber = globalState.roundNumber;
+            fbState.phase = globalState.phase;
+            fbState.countdown = globalState.countdown;
+            
+            console.log('🎰 当前全局状态 - 局号:', globalState.roundNumber, '阶段:', globalState.phase, '倒计时:', globalState.countdown);
+            
+            // 启动全局同步计时器（每秒更新状态）
+            fbState.timer = setInterval(async () => {
                 const now = Date.now();
+                const newGlobalState = fbGetGlobalState();
                 
-                if (fbState.phase === 'betting') {
-                    // 下注阶段：计算剩余倒计时
-                    const elapsed = Math.floor((now - fbState.phaseStartTime) / 1000);
-                    fbState.countdown = Math.max(0, FB_CONFIG.betTime - elapsed);
+                // 检测局号变化（新局开始）
+                if (newGlobalState.roundNumber !== fbState.roundNumber) {
+                    console.log('🎰 新局开始:', newGlobalState.roundNumber);
                     
-                    if (fbState.countdown <= 0) {
-                        // 下注时间结束，执行开奖
-                        console.log('🎰 飞禽走兽后台开奖触发，局号:', fbState.roundNumber);
-                        fbBackgroundStartSpin();
+                    // 结算上一局
+                    if (fbState.phase === 'result' || fbState.phase === 'spinning') {
+                        await fbGlobalSettle(newGlobalState.roundNumber - 1);
                     }
-                } else if (fbState.phase === 'spinning') {
-                    // 走灯阶段：检查是否到达结束时间
-                    if (now >= fbState.spinEndTime) {
-                        console.log('🎰 飞禽走兽走灯结束，执行结算');
-                        fbBackgroundSettle();
+                    
+                    // 重置新局状态
+                    fbState.roundNumber = newGlobalState.roundNumber;
+                    fbState.bets = [];
+                    fbState.confirmedBets = [];
+                    fbState.totalBet = 0;
+                    fbState.pendingResult = null;
+                    fbState.isSpinning = false;
+                    
+                    // 清空上一局的网络下注记录
+                    clearFBPreviousRoundBets();
+                    
+                    // 清空下注显示
+                    if (typeof clearFBBetDisplay === 'function') {
+                        clearFBBetDisplay();
                     }
-                } else if (fbState.phase === 'result') {
-                    // 结果阶段：检查是否到达结束时间
-                    if (now >= fbState.resultEndTime) {
-                        console.log('🎰 飞禽走兽结果展示结束，开始下一局');
-                        fbBackgroundNextRound();
+                }
+                
+                // 检测阶段变化
+                if (newGlobalState.phase !== fbState.phase) {
+                    console.log('🎰 阶段变化:', fbState.phase, '->', newGlobalState.phase);
+                    
+                    if (newGlobalState.phase === 'spinning') {
+                        // 进入走灯阶段，需要获取或生成开奖结果
+                        await fbGlobalStartSpin();
+                    } else if (newGlobalState.phase === 'result') {
+                        // 进入结果阶段
+                        fbState.isSpinning = false;
+                    } else if (newGlobalState.phase === 'betting') {
+                        // 进入下注阶段，加载当前局的所有下注
+                        fbState.isSpinning = false;
+                        await loadFBCurrentRoundBets();
                     }
+                    
+                    fbState.phase = newGlobalState.phase;
+                }
+                
+                // 更新倒计时
+                fbState.countdown = newGlobalState.countdown;
+                
+                // 更新界面显示
+                if (typeof updateFBPhaseDisplay === 'function') {
+                    updateFBPhaseDisplay();
                 }
             }, 1000);
             
-            console.log('🎰 飞禽走兽后台已启动，局号:', fbState.roundNumber, '状态:', fbState.phase);
+            console.log('🎰 飞禽走兽全局同步已启动');
         }
         
-        // 后台开奖 - 确定结果并进入走灯阶段
+        // 全局开奖 - 进入走灯阶段
+        async function fbGlobalStartSpin() {
+            console.log('🎰 全局开奖：获取/生成结果...');
+            
+            // 保存已确认下注
+            fbState.confirmedBets = [...fbState.bets];
+            fbState.isSpinning = true;
+            
+            // 尝试从数据库获取已存在的开奖结果
+            let result = await fbGetResultFromDB(fbState.roundNumber);
+            
+            if (result) {
+                console.log('🎰 从数据库获取到开奖结果:', result.type, result.id);
+            } else {
+                // 数据库中没有，生成新结果并保存
+                result = fbDrawResult();
+                console.log('🎰 生成新开奖结果:', result.type, result.id);
+                await fbSaveResultToDB(fbState.roundNumber, result);
+            }
+            
+            fbState.pendingResult = result;
+            fbState.currentResult = result;
+            
+            // 计算走灯时间：正常15秒，特殊28秒
+            const isSpecial = result.type === 'shark' || result.type === 'tongpei' || result.type === 'bomb';
+            fbState.spinDuration = isSpecial ? 28000 : 15000;
+            
+            // 获取全局状态中的周期起始时间
+            const globalState = fbGetGlobalState();
+            const cycleStartTime = FB_GLOBAL.EPOCH + Math.floor((Date.now() - FB_GLOBAL.EPOCH) / FB_GLOBAL.CYCLE_TIME) * FB_GLOBAL.CYCLE_TIME;
+            
+            // 设置走灯结束时间（基于全局时间，确保所有玩家同步）
+            fbState.spinEndTime = cycleStartTime + FB_GLOBAL.BET_TIME + FB_GLOBAL.SPIN_TIME;
+            
+            console.log('🎰 开奖结果:', result.type, result.id, '走灯时长:', fbState.spinDuration / 1000, '秒');
+            
+            // 启动走灯动画
+            const remainingTime = fbState.spinEndTime - Date.now();
+            if (remainingTime > 0 && typeof startFBSpinAnimationFromSync === 'function') {
+                console.log('🎰 启动走灯动画，剩余时间:', remainingTime);
+                startFBSpinAnimationFromSync(remainingTime);
+            }
+        }
+        
+        // 全局结算 - 计算收益
+        async function fbGlobalSettle(roundNumber) {
+            console.log('🎰 全局结算，局号:', roundNumber);
+            
+            // 获取开奖结果
+            let result = await fbGetResultFromDB(roundNumber);
+            
+            if (!result) {
+                result = fbState.pendingResult;
+            }
+            
+            if (!result) {
+                console.error('🎰 结算错误：没有开奖结果！');
+                return;
+            }
+            
+            // 计算玩家收益
+            let totalWin = 0;
+            const betsToProcess = fbState.confirmedBets && fbState.confirmedBets.length > 0 ? fbState.confirmedBets : fbState.bets;
+            
+            if (betsToProcess && betsToProcess.length > 0) {
+                betsToProcess.forEach(bet => {
+                    let won = false;
+                    let winAmount = 0;
+                    
+                    if (bet.type === 'animal' && result.type === 'animal') {
+                        if (bet.target === result.id) {
+                            const animal = FB_CONFIG.animals.find(a => a.id === result.id);
+                            if (animal) {
+                                winAmount = Math.floor(bet.amount * animal.odds);
+                                won = true;
+                            }
+                        }
+                    } else if (bet.type === 'zone' && result.type === 'animal') {
+                        const animal = FB_CONFIG.animals.find(a => a.id === result.id);
+                        if (animal && animal.zone === bet.target) {
+                            winAmount = Math.floor(bet.amount * 2);
+                            won = true;
+                        }
+                    } else if (result.type === 'tongpei') {
+                        if (bet.type === 'animal') {
+                            const animal = FB_CONFIG.animals.find(a => a.id === bet.target);
+                            if (animal) {
+                                winAmount = Math.floor(bet.amount * animal.odds);
+                                won = true;
+                            }
+                        } else if (bet.type === 'zone') {
+                            winAmount = Math.floor(bet.amount * 2);
+                            won = true;
+                        }
+                    }
+                    
+                    if (won) {
+                        totalWin += winAmount;
+                    }
+                });
+                
+                // 发放收益
+                if (totalWin > 0) {
+                    gameData.player.silver = (gameData.player.silver || 0) + totalWin;
+                    saveGameData();
+                    console.log('🎰 飞禽走兽发放收益:', totalWin);
+                }
+            }
+            
+            // 更新状态
+            fbState.lastWin = totalWin - fbState.totalBet;
+            fbState.lastResult = result;
+            
+            // 添加到历史记录
+            const historyItem = {
+                round: roundNumber,
+                result: result.id || result.type,
+                resultType: result.type,
+                resultName: result.name
+            };
+            
+            const exists = fbState.history.some(h => h.round === roundNumber);
+            if (!exists) {
+                fbState.history.unshift(historyItem);
+                if (fbState.history.length > 20) {
+                    fbState.history = fbState.history.slice(0, 20);
+                }
+            }
+            
+            // 清空下注
+            fbState.bets = [];
+            fbState.confirmedBets = [];
+            fbState.totalBet = 0;
+        }
+        
+        // 后台开奖 - 确定结果并进入走灯阶段（旧函数，保留兼容）
         function fbBackgroundStartSpin() {
             console.log('🎰 后台开奖：确定结果...');
             
@@ -24272,71 +24787,145 @@
             console.log('🎰 新一局开始，局号:', fbState.roundNumber);
         }
         
-        // 守护灵竞技场后台运行初始化 - 全局自动运行版本
-        function initRacingArenaBackground() {
-            console.log('🏁 守护灵竞技场后台启动（全局自动运行模式）...');
+        // 守护灵竞技场后台运行初始化 - 全局同步版本（所有玩家看到相同结果）
+        async function initRacingArenaBackground() {
+            console.log('🏁 守护灵竞技场后台启动（全局同步模式）...');
             
             // 如果计时器已经在运行，不重复启动
             if (raceGlobalState.timer) {
-                console.log('🏁 守护灵竞技场已在运行中，当前状态:', raceGlobalState.phase);
+                console.log('🏁 守护灵竞技场已在运行中');
                 return;
             }
             
-            // 初始化状态
-            raceGlobalState.phase = 'ready';
-            raceGlobalState.countdown = 5;
-            raceGlobalState.phaseStartTime = Date.now();
+            // 初始化 Realtime 订阅
+            await initRaceRealtime();
             
-            // 生成参赛者
-            if (!raceGlobalState.participants || raceGlobalState.participants.length === 0) {
-                generateRaceParticipantsAuto();
-            }
+            // 获取当前全局状态
+            const globalState = raceGetGlobalState();
+            raceGlobalState.roundNumber = globalState.roundNumber;
+            raceGlobalState.phase = globalState.phase;
+            raceGlobalState.countdown = globalState.countdown;
             
-            // 启动后台计时器（每秒检查一次状态）
-            raceGlobalState.timer = setInterval(() => {
-                const now = Date.now();
+            // 生成参赛者（基于局号固定随机种子）
+            generateRaceParticipantsAuto();
+            
+            console.log('🏁 当前全局状态 - 局号:', globalState.roundNumber, '阶段:', globalState.phase, '倒计时:', globalState.countdown);
+            
+            // 启动全局同步计时器（每秒更新状态）
+            raceGlobalState.timer = setInterval(async () => {
+                const newGlobalState = raceGetGlobalState();
                 
-                if (raceGlobalState.phase === 'ready') {
-                    // 准备阶段：计算剩余倒计时
-                    const elapsed = Math.floor((now - raceGlobalState.phaseStartTime) / 1000);
-                    raceGlobalState.countdown = Math.max(0, 5 - elapsed);
+                // 检测局号变化（新局开始）
+                if (newGlobalState.roundNumber !== raceGlobalState.roundNumber) {
+                    console.log('🏁 新局开始:', newGlobalState.roundNumber);
                     
-                    if (raceGlobalState.countdown <= 0) {
-                        // 进入下注阶段
-                        raceGlobalState.phase = 'betting';
-                        raceGlobalState.phaseStartTime = Date.now();
-                        raceGlobalState.countdown = 60;
-                        console.log('🏁 竞技场进入下注阶段');
+                    // 结算上一局
+                    if (raceGlobalState.phase === 'result' || raceGlobalState.phase === 'racing') {
+                        await raceGlobalSettle(newGlobalState.roundNumber - 1);
                     }
-                } else if (raceGlobalState.phase === 'betting') {
-                    // 下注阶段：计算剩余倒计时
-                    const elapsed = Math.floor((now - raceGlobalState.phaseStartTime) / 1000);
-                    raceGlobalState.countdown = Math.max(0, 60 - elapsed);
                     
-                    if (raceGlobalState.countdown <= 0) {
-                        // 开始比赛
-                        console.log('🏁 竞技场比赛开始');
-                        raceBackgroundStartRace();
-                    }
-                } else if (raceGlobalState.phase === 'racing') {
-                    // 比赛阶段：检查是否到达结束时间
-                    if (now >= raceGlobalState.raceEndTime) {
-                        console.log('🏁 竞技场比赛结束，执行结算');
-                        raceBackgroundSettle();
-                    }
-                } else if (raceGlobalState.phase === 'result') {
-                    // 结果阶段：检查是否到达结束时间
-                    if (now >= raceGlobalState.resultEndTime) {
-                        console.log('🏁 竞技场结果展示结束，开始下一局');
-                        raceBackgroundNextRound();
-                    }
+                    // 重置新局状态
+                    raceGlobalState.roundNumber = newGlobalState.roundNumber;
+                    raceGlobalState.bets = [];
+                    raceGlobalState.finalRankings = null;
+                    raceGlobalState.isRacing = false;
+                    
+                    // 生成新的参赛者
+                    generateRaceParticipantsAuto();
                 }
+                
+                // 检测阶段变化
+                if (newGlobalState.phase !== raceGlobalState.phase) {
+                    console.log('🏁 阶段变化:', raceGlobalState.phase, '->', newGlobalState.phase);
+                    
+                    if (newGlobalState.phase === 'racing') {
+                        // 进入比赛阶段
+                        await raceGlobalStartRace();
+                    } else if (newGlobalState.phase === 'result') {
+                        // 进入结果阶段
+                        raceGlobalState.isRacing = false;
+                    }
+                    
+                    raceGlobalState.phase = newGlobalState.phase;
+                }
+                
+                // 更新倒计时
+                raceGlobalState.countdown = newGlobalState.countdown;
             }, 1000);
             
-            console.log('🏁 守护灵竞技场后台已启动，局号:', raceGlobalState.roundNumber);
+            console.log('🏁 守护灵竞技场全局同步已启动');
         }
         
-        // 后台开始比赛
+        // 全局比赛开始
+        async function raceGlobalStartRace() {
+            console.log('🏁 全局比赛开始...');
+            
+            raceGlobalState.isRacing = true;
+            
+            // 尝试从数据库获取已存在的比赛结果
+            let result = await raceGetResultFromDB(raceGlobalState.roundNumber);
+            
+            if (result) {
+                console.log('🏁 从数据库获取到比赛结果:', result.winner);
+                raceGlobalState.finalRankings = result.race_results;
+            } else {
+                // 数据库中没有，生成新结果并保存
+                const participants = raceGlobalState.participants;
+                const rankings = [...Array(participants.length).keys()].sort(() => Math.random() - 0.5);
+                raceGlobalState.finalRankings = rankings;
+                
+                const winner = participants[rankings[0]]?.name || 'unknown';
+                await raceSaveResultToDB(raceGlobalState.roundNumber, winner, rankings);
+                console.log('🏁 生成新比赛结果:', winner);
+            }
+        }
+        
+        // 全局比赛结算
+        async function raceGlobalSettle(roundNumber) {
+            console.log('🏁 全局比赛结算，局号:', roundNumber);
+            
+            // 获取比赛结果
+            let result = await raceGetResultFromDB(roundNumber);
+            const rankings = result?.race_results || raceGlobalState.finalRankings;
+            const participants = raceGlobalState.participants;
+            
+            if (!rankings || !participants) {
+                console.error('🏁 结算错误：没有比赛结果！');
+                return;
+            }
+            
+            // 计算玩家下注收益
+            let betWin = 0;
+            if (raceGlobalState.bets && raceGlobalState.bets.length > 0) {
+                raceGlobalState.bets.forEach(bet => {
+                    let won = false;
+                    const guardianIdx = participants.findIndex(p => p.id === bet.guardianId);
+                    
+                    if (bet.type === 'first' && rankings[0] === guardianIdx) won = true;
+                    else if (bet.type === 'second' && rankings[1] === guardianIdx) won = true;
+                    else if (bet.type === 'third' && rankings[2] === guardianIdx) won = true;
+                    
+                    if (won) {
+                        const odds = bet.type === 'first' ? 3 : (bet.type === 'second' ? 2 : 1);
+                        betWin += Math.floor(bet.amount * odds);
+                    }
+                });
+                
+                // 发放收益
+                if (betWin > 0) {
+                    gameData.player.silver = (gameData.player.silver || 0) + betWin;
+                    saveGameData();
+                    console.log('🏁 竞技场发放收益:', betWin);
+                }
+            }
+            
+            raceGlobalState.lastTotalWin = betWin;
+            
+            // 清空下注
+            raceGlobalState.bets = [];
+        }
+        
+        // 后台开始比赛（旧函数，用于兼容）
         function raceBackgroundStartRace() {
             console.log('🏁 后台开始比赛...');
             
@@ -24851,8 +25440,15 @@
         async function sendChatToCloud(channel, player, message) {
             const msgId = Date.now() + '_' + Math.random().toString(36).substr(2, 9);
             
+            // 预先将消息ID加入已显示列表，防止 Realtime 推送时重复显示
+            displayedMessageIds.add(msgId);
+            
             if (!supabaseClient) {
                 console.warn('Supabase未初始化，消息仅本地显示');
+                // 即使没有 Supabase，也要本地显示
+                const now = new Date();
+                const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
+                addChatMessage('top', timeStr, channel, player, message);
                 return;
             }
             
@@ -24870,11 +25466,23 @@
                 
                 if (error) {
                     console.error('发送聊天消息失败:', error);
+                    // 发送失败时本地显示
+                    const now = new Date();
+                    const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
+                    addChatMessage('top', timeStr, channel, player, message);
                 } else {
                     console.log('✅ 消息已发送到云端:', msgId);
+                    // 发送成功后本地立即显示（不等待 Realtime 推送）
+                    const now = new Date();
+                    const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
+                    addChatMessage('top', timeStr, channel, player, message);
                 }
             } catch (e) {
                 console.error('发送聊天消息异常:', e);
+                // 异常时本地显示
+                const now = new Date();
+                const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
+                addChatMessage('top', timeStr, channel, player, message);
             }
         }
         
@@ -24945,6 +25553,8 @@
             
             // 创建 WebSocket 实时订阅
             try {
+                let realtimeConnected = false;
+                
                 chatChannel = supabaseClient
                     .channel('chat-room-global')
                     .on(
@@ -24962,13 +25572,19 @@
                     .subscribe((status) => {
                         console.log('📡 聊天室订阅状态:', status);
                         if (status === 'SUBSCRIBED') {
+                            realtimeConnected = true;
                             console.log('✅ 聊天广播系统已启动 - WebSocket实时模式');
-                        } else if (status === 'CHANNEL_ERROR') {
+                        } else if (status === 'CHANNEL_ERROR' || status === 'CLOSED' || status === 'TIMED_OUT') {
                             console.error('❌ 聊天室连接失败，启用轮询备用');
-                            // 如果WebSocket失败，启用轮询备用
                             startPollingBackup();
                         }
                     });
+                
+                // 同时启动轮询作为双保险（每2秒检查一次，不会重复显示因为去重逻辑）
+                setTimeout(() => {
+                    startPollingBackup();
+                    console.log('🔄 轮询备用模式已启动（双保险）');
+                }, 3000);
             } catch (e) {
                 console.error('WebSocket订阅失败:', e);
                 // 启用轮询备用
@@ -25012,14 +25628,9 @@
             const message = input.value.trim();
             if (!message) return;
 
-            const now = new Date();
-            const time = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
             const channel = document.getElementById('channelSelect').value;
             
-            // 本地显示消息
-            addChatMessage('top', time, channel, gameData.player.name, message);
-            
-            // 发送到云端（让其他玩家看到）
+            // 发送到云端（sendChatToCloud 会处理本地显示）
             sendChatToCloud(channel, gameData.player.name, message);
             
             input.value = '';
@@ -26483,6 +27094,157 @@
             stopSiegeGame();
         }
 
+        // ========== 守护灵竞技场全局同步系统 ==========
+        
+        // 全局同步配置
+        const RACE_GLOBAL = {
+            // 全局起始时间：2024-01-01 00:00:00 UTC（固定不变）
+            EPOCH: new Date('2024-01-01T00:00:00Z').getTime(),
+            // 每局总时长（毫秒）：准备5秒 + 下注60秒 + 比赛30秒 + 结果15秒 = 110秒
+            CYCLE_TIME: 110000,
+            // 各阶段时长（毫秒）
+            READY_TIME: 5000,
+            BET_TIME: 60000,
+            RACE_TIME: 30000,
+            RESULT_TIME: 15000
+        };
+        
+        // 计算当前全局状态
+        function raceGetGlobalState() {
+            const now = Date.now();
+            const elapsed = now - RACE_GLOBAL.EPOCH;
+            const cycleOffset = elapsed % RACE_GLOBAL.CYCLE_TIME;
+            const roundNumber = Math.floor(elapsed / RACE_GLOBAL.CYCLE_TIME) + 1;
+            
+            let phase, countdown;
+            
+            if (cycleOffset < RACE_GLOBAL.READY_TIME) {
+                phase = 'ready';
+                countdown = Math.ceil((RACE_GLOBAL.READY_TIME - cycleOffset) / 1000);
+            } else if (cycleOffset < RACE_GLOBAL.READY_TIME + RACE_GLOBAL.BET_TIME) {
+                phase = 'betting';
+                countdown = Math.ceil((RACE_GLOBAL.READY_TIME + RACE_GLOBAL.BET_TIME - cycleOffset) / 1000);
+            } else if (cycleOffset < RACE_GLOBAL.READY_TIME + RACE_GLOBAL.BET_TIME + RACE_GLOBAL.RACE_TIME) {
+                phase = 'racing';
+                countdown = Math.ceil((RACE_GLOBAL.READY_TIME + RACE_GLOBAL.BET_TIME + RACE_GLOBAL.RACE_TIME - cycleOffset) / 1000);
+            } else {
+                phase = 'result';
+                countdown = Math.ceil((RACE_GLOBAL.CYCLE_TIME - cycleOffset) / 1000);
+            }
+            
+            return { roundNumber, phase, countdown, cycleOffset };
+        }
+        
+        // 从数据库加载竞技场历史
+        async function raceLoadHistoryFromDB() {
+            if (!supabaseClient) return [];
+            
+            try {
+                const { data, error } = await supabaseClient
+                    .from('racing_arena_results')
+                    .select('*')
+                    .order('round_number', { ascending: false })
+                    .limit(10);
+                
+                if (error) {
+                    console.error('加载竞技场历史失败:', error);
+                    return [];
+                }
+                
+                return data || [];
+            } catch (e) {
+                console.error('加载竞技场历史异常:', e);
+                return [];
+            }
+        }
+        
+        // 保存比赛结果到数据库
+        async function raceSaveResultToDB(roundNumber, winner, raceResults) {
+            if (!supabaseClient) return false;
+            
+            try {
+                const { error } = await supabaseClient
+                    .from('racing_arena_results')
+                    .insert({
+                        round_number: roundNumber,
+                        winner: winner,
+                        race_results: raceResults
+                    });
+                
+                if (error) {
+                    if (error.code === '23505') {
+                        console.log('🏁 比赛结果已存在:', roundNumber);
+                        return true;
+                    }
+                    console.error('保存比赛结果失败:', error);
+                    return false;
+                }
+                
+                console.log('✅ 比赛结果已保存到数据库:', roundNumber, winner);
+                return true;
+            } catch (e) {
+                console.error('保存比赛结果异常:', e);
+                return false;
+            }
+        }
+        
+        // 从数据库获取指定局的比赛结果
+        async function raceGetResultFromDB(roundNumber) {
+            if (!supabaseClient) return null;
+            
+            try {
+                const { data, error } = await supabaseClient
+                    .from('racing_arena_results')
+                    .select('*')
+                    .eq('round_number', roundNumber)
+                    .single();
+                
+                if (error) {
+                    if (error.code === 'PGRST116') return null;
+                    console.error('获取比赛结果失败:', error);
+                    return null;
+                }
+                
+                return data;
+            } catch (e) {
+                console.error('获取比赛结果异常:', e);
+                return null;
+            }
+        }
+        
+        // 竞技场 Realtime 订阅
+        let raceRealtimeChannel = null;
+        let raceRealtimeInitialized = false;
+        
+        async function initRaceRealtime() {
+            if (raceRealtimeInitialized || !supabaseClient) return;
+            
+            raceRealtimeInitialized = true;
+            
+            try {
+                raceRealtimeChannel = supabaseClient
+                    .channel('racing-arena-global')
+                    .on(
+                        'postgres_changes',
+                        {
+                            event: 'INSERT',
+                            schema: 'public',
+                            table: 'racing_arena_results'
+                        },
+                        (payload) => {
+                            console.log('🏁 收到新比赛结果:', payload.new);
+                            // 更新状态
+                            raceGlobalState.finalRankings = payload.new.race_results;
+                        }
+                    )
+                    .subscribe((status) => {
+                        console.log('🏁 竞技场 Realtime 状态:', status);
+                    });
+            } catch (e) {
+                console.error('竞技场 Realtime 初始化失败:', e);
+            }
+        }
+
         // ========== 守护灵竞技场系统 ==========
         
         // 竞技场数据
@@ -27272,7 +28034,7 @@
         }
         
         // 确认下注
-        function confirmBetAction() {
+        async function confirmBetAction() {
             // 检查是否已参赛（参赛后禁止下注）
             if (raceGlobalState.playerParticipant) {
                 announceEvent('❌ 你的守护灵已参赛，无法下注！', 'warning');
@@ -27311,13 +28073,18 @@
             }
             
             // 记录下注
-            raceGlobalState.bets.push({
+            const bet = {
                 guardianId: raceGlobalState.selectedBetGuardian.id,
                 guardianName: raceGlobalState.selectedBetGuardian.name,
                 amount: amount,
                 type: betType,
                 odds: racingArena.odds[betType]
-            });
+            };
+            
+            raceGlobalState.bets.push(bet);
+            
+            // 保存到数据库（网络同步）
+            await saveRaceBetToDB(bet);
             
             const typeText = betType === 'first' ? '第一名' : betType === 'second' ? '第二名' : '第三名';
             announceEvent(`✅ 下注成功！【${raceGlobalState.selectedBetGuardian.name}】${typeText} ${amount}金币`, 'success');
@@ -28906,6 +29673,196 @@
             }
         }
 
+        // ========== 飞禽走兽全局同步系统 ==========
+        // 使用服务器时间同步，所有玩家看到相同的开奖结果
+        
+        // 全局同步配置
+        const FB_GLOBAL = {
+            // 全局起始时间：2024-01-01 00:00:00 UTC（固定不变）
+            EPOCH: new Date('2024-01-01T00:00:00Z').getTime(),
+            // 每局总时长（毫秒）：下注45秒 + 走灯15秒 + 结果5秒 = 65秒
+            CYCLE_TIME: 65000,
+            // 各阶段时长（毫秒）
+            BET_TIME: 45000,
+            SPIN_TIME: 15000,
+            RESULT_TIME: 5000
+        };
+        
+        // 计算当前全局状态
+        function fbGetGlobalState() {
+            const now = Date.now();
+            const elapsed = now - FB_GLOBAL.EPOCH;
+            const cycleOffset = elapsed % FB_GLOBAL.CYCLE_TIME;
+            const roundNumber = Math.floor(elapsed / FB_GLOBAL.CYCLE_TIME) + 10001;
+            
+            let phase, countdown, phaseEndTime;
+            
+            if (cycleOffset < FB_GLOBAL.BET_TIME) {
+                // 下注阶段
+                phase = 'betting';
+                countdown = Math.ceil((FB_GLOBAL.BET_TIME - cycleOffset) / 1000);
+                phaseEndTime = FB_GLOBAL.EPOCH + Math.floor(elapsed / FB_GLOBAL.CYCLE_TIME) * FB_GLOBAL.CYCLE_TIME + FB_GLOBAL.BET_TIME;
+            } else if (cycleOffset < FB_GLOBAL.BET_TIME + FB_GLOBAL.SPIN_TIME) {
+                // 走灯阶段
+                phase = 'spinning';
+                countdown = Math.ceil((FB_GLOBAL.BET_TIME + FB_GLOBAL.SPIN_TIME - cycleOffset) / 1000);
+                phaseEndTime = FB_GLOBAL.EPOCH + Math.floor(elapsed / FB_GLOBAL.CYCLE_TIME) * FB_GLOBAL.CYCLE_TIME + FB_GLOBAL.BET_TIME + FB_GLOBAL.SPIN_TIME;
+            } else {
+                // 结果阶段
+                phase = 'result';
+                countdown = Math.ceil((FB_GLOBAL.CYCLE_TIME - cycleOffset) / 1000);
+                phaseEndTime = FB_GLOBAL.EPOCH + (Math.floor(elapsed / FB_GLOBAL.CYCLE_TIME) + 1) * FB_GLOBAL.CYCLE_TIME;
+            }
+            
+            return { roundNumber, phase, countdown, phaseEndTime, cycleOffset };
+        }
+        
+        // 从数据库加载开奖历史
+        async function fbLoadHistoryFromDB() {
+            if (!supabaseClient) return [];
+            
+            try {
+                const { data, error } = await supabaseClient
+                    .from('flying_beasts_results')
+                    .select('*')
+                    .order('round_number', { ascending: false })
+                    .limit(20);
+                
+                if (error) {
+                    console.error('加载飞禽走兽历史失败:', error);
+                    return [];
+                }
+                
+                return (data || []).map(row => ({
+                    round: row.round_number,
+                    result: row.result_id || row.result_type,
+                    resultType: row.result_type,
+                    resultName: row.result_name
+                }));
+            } catch (e) {
+                console.error('加载飞禽走兽历史异常:', e);
+                return [];
+            }
+        }
+        
+        // 保存开奖结果到数据库
+        async function fbSaveResultToDB(roundNumber, result) {
+            if (!supabaseClient) return false;
+            
+            try {
+                const { error } = await supabaseClient
+                    .from('flying_beasts_results')
+                    .insert({
+                        round_number: roundNumber,
+                        result_type: result.type,
+                        result_id: result.id || null,
+                        result_name: result.name || result.type
+                    });
+                
+                if (error) {
+                    // 如果是重复插入错误，忽略
+                    if (error.code === '23505') {
+                        console.log('🎰 开奖结果已存在:', roundNumber);
+                        return true;
+                    }
+                    console.error('保存开奖结果失败:', error);
+                    return false;
+                }
+                
+                console.log('✅ 开奖结果已保存到数据库:', roundNumber, result.type);
+                return true;
+            } catch (e) {
+                console.error('保存开奖结果异常:', e);
+                return false;
+            }
+        }
+        
+        // 从数据库获取指定局的开奖结果
+        async function fbGetResultFromDB(roundNumber) {
+            if (!supabaseClient) return null;
+            
+            try {
+                const { data, error } = await supabaseClient
+                    .from('flying_beasts_results')
+                    .select('*')
+                    .eq('round_number', roundNumber)
+                    .single();
+                
+                if (error) {
+                    if (error.code === 'PGRST116') return null; // 没有找到
+                    console.error('获取开奖结果失败:', error);
+                    return null;
+                }
+                
+                return {
+                    type: data.result_type,
+                    id: data.result_id,
+                    name: data.result_name
+                };
+            } catch (e) {
+                console.error('获取开奖结果异常:', e);
+                return null;
+            }
+        }
+        
+        // 飞禽走兽 Realtime 订阅
+        let fbRealtimeChannel = null;
+        let fbRealtimeInitialized = false;
+        
+        async function initFBRealtime() {
+            if (fbRealtimeInitialized || !supabaseClient) return;
+            
+            fbRealtimeInitialized = true;
+            
+            try {
+                fbRealtimeChannel = supabaseClient
+                    .channel('flying-beasts-global')
+                    .on(
+                        'postgres_changes',
+                        {
+                            event: 'INSERT',
+                            schema: 'public',
+                            table: 'flying_beasts_results'
+                        },
+                        (payload) => {
+                            console.log('🎰 收到新开奖结果:', payload.new);
+                            const result = {
+                                type: payload.new.result_type,
+                                id: payload.new.result_id,
+                                name: payload.new.result_name
+                            };
+                            
+                            // 添加到历史记录
+                            const historyItem = {
+                                round: payload.new.round_number,
+                                result: payload.new.result_id || payload.new.result_type,
+                                resultType: payload.new.result_type,
+                                resultName: payload.new.result_name
+                            };
+                            
+                            // 检查是否已存在
+                            const exists = fbState.history.some(h => h.round === historyItem.round);
+                            if (!exists) {
+                                fbState.history.unshift(historyItem);
+                                if (fbState.history.length > 20) {
+                                    fbState.history = fbState.history.slice(0, 20);
+                                }
+                                
+                                // 更新界面
+                                if (typeof renderFBHistory === 'function') {
+                                    renderFBHistory();
+                                }
+                            }
+                        }
+                    )
+                    .subscribe((status) => {
+                        console.log('🎰 飞禽走兽 Realtime 状态:', status);
+                    });
+            } catch (e) {
+                console.error('飞禽走兽 Realtime 初始化失败:', e);
+            }
+        }
+
         // ========== 飞禽走兽系统（文创娱乐版） ==========
         
         // 飞禽走兽配置 - 8门动物（4飞禽+4走兽）
@@ -29049,6 +30006,9 @@
             modal.style.display = 'flex';
             console.log('✅ 弹窗已显示');
             
+            // 加载当前局的所有下注（网络同步）
+            loadFBCurrentRoundBets();
+            
             // 初始化界面（不重新启动游戏，只更新UI）
             initFlyingBeastsUI();
             
@@ -29071,12 +30031,16 @@
                 // 非下注阶段，清除下注显示
                 clearFBBetDisplay();
             } else {
-                // 下注阶段，恢复下注显示
+                // 下注阶段，更新所有动物卡片的下注显示
+                // fbCurrentRoundBets 已经包含了当前玩家的下注
                 FB_CONFIG.animals.forEach(animal => {
                     updateFBBetCell(animal.id);
                 });
                 updateFBZoneDisplay('flying');
                 updateFBZoneDisplay('beast');
+                
+                // 异步加载其他玩家的下注（如果有数据库连接）
+                loadFBCurrentRoundBets();
             }
             
             // 更新基础显示
@@ -29147,9 +30111,11 @@
                         console.log('🎰 显示开奖结果');
                         showFBAutoResult(fbState.pendingResult);
                     } else if (lastPhase === 'result' && currentPhase === 'betting') {
-                        // 从结果进入下注，清空界面
+                        // 从结果进入下注，清空界面并加载新局下注
                         console.log('🎰 开始新一局');
                         clearFBBetDisplay();
+                        // 加载当前局的所有下注（可能有其他玩家已经下注）
+                        loadFBCurrentRoundBets();
                         renderFBHistoryRope();
                         renderFBHistoryList();
                         showFBMessage(`第 ${fbState.roundNumber} 局开始，请下注！`, 'info');
@@ -29695,7 +30661,7 @@
         
         // 押注单个动物 - 赛博霓虹风格
         let fbBetAnimalTimeout = null; // 防抖定时器
-        function fbBetAnimal(animalId) {
+        async function fbBetAnimal(animalId) {
             // 防抖：500ms内只能点击一次
             if (fbBetAnimalTimeout) {
                 console.log('⏳ 下注防抖中，请稍候...');
@@ -29730,10 +30696,10 @@
                 return;
             }
             
-            // 执行押注
-            executeFBBet(animalId, 'animal', amount, animal.odds);
+            // 执行押注（异步等待完成）
+            await executeFBBet(animalId, 'animal', amount, animal.odds);
             
-            // 更新押注格显示
+            // 更新押注格显示（现在数据已经在 fbCurrentRoundBets 中了）
             updateFBBetCell(animalId);
             
             // 显示当前总下注
@@ -29743,7 +30709,7 @@
         }
         
         // 押注大区 - 赛博霓虹风格
-        function fbBetZone(zone) {
+        async function fbBetZone(zone) {
             if (fbState.phase !== 'betting') {
                 showFBMessage('当前不是下注阶段！', 'warning');
                 return;
@@ -29754,11 +30720,13 @@
             // 验证押注
             if (!validateFBBet(zone, 'zone', amount, 2)) return;
             
-            // 执行押注
-            executeFBBet(zone, 'zone', amount, 2);
+            // 执行押注（异步等待完成）
+            await executeFBBet(zone, 'zone', amount, 2);
             
             // 更新区域显示
             updateFBZoneDisplay(zone);
+            
+            showFBMessage(`已押注 ${zone === 'flying' ? '飞禽区' : '走兽区'} ${amount}银币`, 'success');
         }
         
         // 验证押注
@@ -29825,7 +30793,7 @@
         }
         
         // 执行押注
-        function executeFBBet(target, type, amount, odds) {
+        async function executeFBBet(target, type, amount, odds) {
             // 扣除银币
             gameData.player.silver = (gameData.player.silver || 0) - amount;
             saveGameData();
@@ -29840,8 +30808,44 @@
             fbState.totalBet += amount;
             fbState.dailyBetTotal += amount;
             
+            // 添加到本地网络下注列表（即使没有数据库连接也要显示）
+            fbCurrentRoundBets.push({
+                round_number: fbState.roundNumber,
+                player_id: onlinePlayerId || 'local_player',
+                player_name: gameData.player.name || '游客',
+                bet_type: type,
+                bet_target: target,
+                bet_amount: amount
+            });
+            
+            // 保存到数据库（网络同步）
+            if (supabaseClient) {
+                try {
+                    await supabaseClient
+                        .from('flying_beasts_bets')
+                        .insert({
+                            round_number: fbState.roundNumber,
+                            player_id: onlinePlayerId || 'guest_' + Date.now(),
+                            player_name: gameData.player.name || '游客',
+                            bet_type: type,
+                            bet_target: target,
+                            bet_amount: amount
+                        });
+                } catch (e) {
+                    console.error('保存下注到数据库失败:', e);
+                    // 即使数据库保存失败，本地显示仍然有效
+                }
+            }
+            
             // 更新显示
             updateFBDisplay();
+            
+            // 更新下注格显示
+            if (type === 'animal') {
+                updateFBBetCell(target);
+            } else if (type === 'zone') {
+                updateFBZoneDisplay(target);
+            }
         }
         
         // 选择筹码 - 赛博霓虹风格
@@ -31117,28 +32121,27 @@
             listEl.innerHTML = html;
         }
         
-        // 更新押注格显示
+        // 更新押注格显示（分开显示我的下注和总下注）
         function updateFBBetCell(animalId) {
-            const bet = fbState.bets.find(b => b.target === animalId);
-            const betEl = document.getElementById(`bet-${animalId}`);
+            // 我在该动物上的下注
+            const myBet = fbState.bets.find(b => b.target === animalId);
+            const myBetAmount = myBet ? myBet.amount : 0;
             
-            console.log('📊 更新下注显示:', animalId, '金额:', bet ? bet.amount : 0);
+            // 所有玩家在该动物上的下注总额
+            const totalBet = fbCurrentRoundBets
+                .filter(b => b.bet_type === 'animal' && b.bet_target === animalId)
+                .reduce((sum, b) => sum + b.bet_amount, 0);
             
-            if (betEl) {
-                betEl.textContent = bet ? formatNumber(bet.amount) : '';
-                console.log('✅ 下注显示已更新:', `bet-${animalId}`, betEl.textContent);
-            } else {
-                console.warn('⚠️ 找不到下注显示元素:', `bet-${animalId}`);
+            // 更新我的下注显示（绿色）
+            const myBetEl = document.getElementById(`my-bet-${animalId}`);
+            if (myBetEl) {
+                myBetEl.textContent = myBetAmount > 0 ? formatNumber(myBetAmount) : '';
             }
             
-            // 更新卡片选中状态
-            const cardEl = document.getElementById(`fb-card-${animalId}`);
-            if (cardEl) {
-                if (bet) {
-                    cardEl.classList.add('has-bet');
-                } else {
-                    cardEl.classList.remove('has-bet');
-                }
+            // 更新总下注显示（金色）
+            const totalBetEl = document.getElementById(`total-bet-${animalId}`);
+            if (totalBetEl) {
+                totalBetEl.textContent = totalBet > 0 ? formatNumber(totalBet) : '';
             }
         }
         
@@ -31147,15 +32150,24 @@
             const zoneEl = document.getElementById(`fb-zone-${zone}`);
             if (!zoneEl) return;
             
-            // 计算该区域的总下注金额
-            const betAmount = fbState.bets
-                .filter(b => b.target === zone)
-                .reduce((sum, b) => sum + b.amount, 0);
+            // 所有玩家在该区域的下注总额
+            const totalBet = fbCurrentRoundBets
+                .filter(b => b.bet_type === 'zone' && b.bet_target === zone)
+                .reduce((sum, b) => sum + b.bet_amount, 0);
             
-            // 更新下注金额显示
+            // 我在该区域的下注
+            const myBet = fbState.bets.find(b => b.target === zone);
+            
+            // 更新显示
             const betDisplayEl = zoneEl.querySelector('.zone-bet');
             if (betDisplayEl) {
-                betDisplayEl.textContent = betAmount > 0 ? formatNumber(betAmount) : '';
+                if (myBet && myBet.amount > 0) {
+                    betDisplayEl.textContent = `${formatNumber(myBet.amount)}/${formatNumber(totalBet)}`;
+                } else if (totalBet > 0) {
+                    betDisplayEl.textContent = formatNumber(totalBet);
+                } else {
+                    betDisplayEl.textContent = '';
+                }
             }
         }
         
@@ -31231,27 +32243,35 @@
         function clearFBBetDisplay() {
             console.log('🧹 清空下注显示');
             
-            // 清空所有动物卡片的下注显示
-            document.querySelectorAll('.fb-animal-card .bet-amount').forEach(el => {
-                el.textContent = '';
+            const animals = ['swallow', 'pigeon', 'peacock', 'eagle', 'shark', 'lion', 'panda', 'monkey', 'rabbit'];
+            
+            // 清空我的下注显示
+            animals.forEach(animal => {
+                const myBetEl = document.getElementById(`my-bet-${animal}`);
+                if (myBetEl) myBetEl.textContent = '';
             });
             
-            // 清空区域按钮的下注显示
+            // 清空总下注显示
+            animals.forEach(animal => {
+                const totalBetEl = document.getElementById(`total-bet-${animal}`);
+                if (totalBetEl) totalBetEl.textContent = '';
+            });
+            
+            // 清空区域下注显示
             document.querySelectorAll('.fb-zone-btn .zone-bet').forEach(el => {
                 el.textContent = '';
             });
             
-            // 清空下注列表
-            const betList = document.getElementById('fbBetList');
-            if (betList) {
-                betList.innerHTML = '<div style="color: #555; font-size: 12px;">暂无押注</div>';
-            }
-            
-            // 清空总下注显示
-            const totalBetEl = document.getElementById('fbTotalBet');
-            if (totalBetEl) {
-                totalBetEl.textContent = '0';
-            }
+            // 移除卡片激活状态
+            document.querySelectorAll('.fb-animal-bet-cell').forEach(el => {
+                el.classList.remove('has-bet');
+            });
+        }
+        
+        // 清空上一局的网络下注数据（新局开始时调用）
+        function clearFBPreviousRoundBets() {
+            console.log('🧹 清空上一局下注数据');
+            fbCurrentRoundBets = [];
         }
         
         // 更新押注列表
@@ -32076,7 +33096,7 @@
             </div>
             
             <!-- 动物下注区 -->
-            <div style="display: grid; grid-template-columns: repeat(9, 72px); grid-template-rows: 38px 28px; gap: 4px; margin-bottom: 6px;">
+            <div style="display: grid; grid-template-columns: repeat(9, 72px); grid-template-rows: 38px 22px 22px; gap: 4px; margin-bottom: 6px;">
                 <!-- 动物图标行 -->
                 <div class="fb-animal-bet-cell" onclick="fbBetAnimal('swallow')" style="display: flex; flex-direction: column; align-items: center; justify-content: center; background: linear-gradient(135deg, rgba(0, 100, 100, 0.3), rgba(0, 50, 50, 0.3)); border: 1px solid #00ffff; border-radius: 6px;"><span style="font-size: 16px;">🐦</span><span style="font-size: 10px; color: #ffd700;">X6</span></div>
                 <div class="fb-animal-bet-cell" onclick="fbBetAnimal('pigeon')" style="display: flex; flex-direction: column; align-items: center; justify-content: center; background: linear-gradient(135deg, rgba(80, 80, 0, 0.3), rgba(40, 40, 0, 0.3)); border: 1px solid #00ffff; border-radius: 6px;"><span style="font-size: 16px;">🕊️</span><span style="font-size: 10px; color: #ffd700;">X8</span></div>
@@ -32087,16 +33107,26 @@
                 <div class="fb-animal-bet-cell" onclick="fbBetAnimal('panda')" style="display: flex; flex-direction: column; align-items: center; justify-content: center; background: linear-gradient(135deg, rgba(60, 60, 60, 0.3), rgba(30, 30, 30, 0.3)); border: 1px solid #ffaa00; border-radius: 6px;"><span style="font-size: 16px;">🐼</span><span style="font-size: 10px; color: #ffd700;">X8</span></div>
                 <div class="fb-animal-bet-cell" onclick="fbBetAnimal('monkey')" style="display: flex; flex-direction: column; align-items: center; justify-content: center; background: linear-gradient(135deg, rgba(80, 50, 0, 0.3), rgba(40, 25, 0, 0.3)); border: 1px solid #ffaa00; border-radius: 6px;"><span style="font-size: 16px;">🐵</span><span style="font-size: 10px; color: #ffd700;">X8</span></div>
                 <div class="fb-animal-bet-cell" onclick="fbBetAnimal('rabbit')" style="display: flex; flex-direction: column; align-items: center; justify-content: center; background: linear-gradient(135deg, rgba(80, 40, 40, 0.3), rgba(40, 20, 20, 0.3)); border: 1px solid #ffaa00; border-radius: 6px;"><span style="font-size: 16px;">🐰</span><span style="font-size: 10px; color: #ffd700;">X6</span></div>
-                <!-- 下注金额行 -->
-                <div id="bet-swallow" class="fb-bet-display" style="display: flex; align-items: center; justify-content: center; background: rgba(0, 100, 100, 0.2); border: 1px solid rgba(0, 255, 255, 0.3); border-radius: 6px;"></div>
-                <div id="bet-pigeon" class="fb-bet-display" style="display: flex; align-items: center; justify-content: center; background: rgba(80, 80, 0, 0.2); border: 1px solid rgba(255, 255, 0, 0.3); border-radius: 6px;"></div>
-                <div id="bet-peacock" class="fb-bet-display" style="display: flex; align-items: center; justify-content: center; background: rgba(0, 80, 80, 0.2); border: 1px solid rgba(0, 255, 255, 0.3); border-radius: 6px;"></div>
-                <div id="bet-eagle" class="fb-bet-display" style="display: flex; align-items: center; justify-content: center; background: rgba(0, 80, 60, 0.2); border: 1px solid rgba(0, 255, 200, 0.3); border-radius: 6px;"></div>
-                <div id="bet-shark" class="fb-bet-display" style="display: flex; align-items: center; justify-content: center; background: rgba(100, 50, 100, 0.2); border: 1px solid rgba(255, 215, 0, 0.5); border-radius: 6px;"></div>
-                <div id="bet-lion" class="fb-bet-display" style="display: flex; align-items: center; justify-content: center; background: rgba(100, 60, 0, 0.2); border: 1px solid rgba(255, 170, 0, 0.3); border-radius: 6px;"></div>
-                <div id="bet-panda" class="fb-bet-display" style="display: flex; align-items: center; justify-content: center; background: rgba(60, 60, 60, 0.2); border: 1px solid rgba(150, 150, 150, 0.3); border-radius: 6px;"></div>
-                <div id="bet-monkey" class="fb-bet-display" style="display: flex; align-items: center; justify-content: center; background: rgba(80, 50, 0, 0.2); border: 1px solid rgba(255, 170, 0, 0.3); border-radius: 6px;"></div>
-                <div id="bet-rabbit" class="fb-bet-display" style="display: flex; align-items: center; justify-content: center; background: rgba(80, 40, 40, 0.2); border: 1px solid rgba(255, 100, 100, 0.3); border-radius: 6px;"></div>
+                <!-- 我的下注行（绿色） -->
+                <div id="my-bet-swallow" class="fb-bet-display my-bet" style="display: flex; align-items: center; justify-content: center; background: rgba(0, 100, 100, 0.2); border: 1px solid rgba(0, 255, 136, 0.3); border-radius: 4px; font-size: 11px; color: #00ff88;"></div>
+                <div id="my-bet-pigeon" class="fb-bet-display my-bet" style="display: flex; align-items: center; justify-content: center; background: rgba(80, 80, 0, 0.2); border: 1px solid rgba(0, 255, 136, 0.3); border-radius: 4px; font-size: 11px; color: #00ff88;"></div>
+                <div id="my-bet-peacock" class="fb-bet-display my-bet" style="display: flex; align-items: center; justify-content: center; background: rgba(0, 80, 80, 0.2); border: 1px solid rgba(0, 255, 136, 0.3); border-radius: 4px; font-size: 11px; color: #00ff88;"></div>
+                <div id="my-bet-eagle" class="fb-bet-display my-bet" style="display: flex; align-items: center; justify-content: center; background: rgba(0, 80, 60, 0.2); border: 1px solid rgba(0, 255, 136, 0.3); border-radius: 4px; font-size: 11px; color: #00ff88;"></div>
+                <div id="my-bet-shark" class="fb-bet-display my-bet" style="display: flex; align-items: center; justify-content: center; background: rgba(100, 50, 100, 0.2); border: 1px solid rgba(0, 255, 136, 0.3); border-radius: 4px; font-size: 11px; color: #00ff88;"></div>
+                <div id="my-bet-lion" class="fb-bet-display my-bet" style="display: flex; align-items: center; justify-content: center; background: rgba(100, 60, 0, 0.2); border: 1px solid rgba(0, 255, 136, 0.3); border-radius: 4px; font-size: 11px; color: #00ff88;"></div>
+                <div id="my-bet-panda" class="fb-bet-display my-bet" style="display: flex; align-items: center; justify-content: center; background: rgba(60, 60, 60, 0.2); border: 1px solid rgba(0, 255, 136, 0.3); border-radius: 4px; font-size: 11px; color: #00ff88;"></div>
+                <div id="my-bet-monkey" class="fb-bet-display my-bet" style="display: flex; align-items: center; justify-content: center; background: rgba(80, 50, 0, 0.2); border: 1px solid rgba(0, 255, 136, 0.3); border-radius: 4px; font-size: 11px; color: #00ff88;"></div>
+                <div id="my-bet-rabbit" class="fb-bet-display my-bet" style="display: flex; align-items: center; justify-content: center; background: rgba(80, 40, 40, 0.2); border: 1px solid rgba(0, 255, 136, 0.3); border-radius: 4px; font-size: 11px; color: #00ff88;"></div>
+                <!-- 总下注行（金色） -->
+                <div id="total-bet-swallow" class="fb-bet-display total-bet" style="display: flex; align-items: center; justify-content: center; background: rgba(100, 80, 0, 0.2); border: 1px solid rgba(255, 215, 0, 0.3); border-radius: 4px; font-size: 11px; color: #ffd700;"></div>
+                <div id="total-bet-pigeon" class="fb-bet-display total-bet" style="display: flex; align-items: center; justify-content: center; background: rgba(100, 80, 0, 0.2); border: 1px solid rgba(255, 215, 0, 0.3); border-radius: 4px; font-size: 11px; color: #ffd700;"></div>
+                <div id="total-bet-peacock" class="fb-bet-display total-bet" style="display: flex; align-items: center; justify-content: center; background: rgba(100, 80, 0, 0.2); border: 1px solid rgba(255, 215, 0, 0.3); border-radius: 4px; font-size: 11px; color: #ffd700;"></div>
+                <div id="total-bet-eagle" class="fb-bet-display total-bet" style="display: flex; align-items: center; justify-content: center; background: rgba(100, 80, 0, 0.2); border: 1px solid rgba(255, 215, 0, 0.3); border-radius: 4px; font-size: 11px; color: #ffd700;"></div>
+                <div id="total-bet-shark" class="fb-bet-display total-bet" style="display: flex; align-items: center; justify-content: center; background: rgba(100, 80, 0, 0.2); border: 1px solid rgba(255, 215, 0, 0.3); border-radius: 4px; font-size: 11px; color: #ffd700;"></div>
+                <div id="total-bet-lion" class="fb-bet-display total-bet" style="display: flex; align-items: center; justify-content: center; background: rgba(100, 80, 0, 0.2); border: 1px solid rgba(255, 215, 0, 0.3); border-radius: 4px; font-size: 11px; color: #ffd700;"></div>
+                <div id="total-bet-panda" class="fb-bet-display total-bet" style="display: flex; align-items: center; justify-content: center; background: rgba(100, 80, 0, 0.2); border: 1px solid rgba(255, 215, 0, 0.3); border-radius: 4px; font-size: 11px; color: #ffd700;"></div>
+                <div id="total-bet-monkey" class="fb-bet-display total-bet" style="display: flex; align-items: center; justify-content: center; background: rgba(100, 80, 0, 0.2); border: 1px solid rgba(255, 215, 0, 0.3); border-radius: 4px; font-size: 11px; color: #ffd700;"></div>
+                <div id="total-bet-rabbit" class="fb-bet-display total-bet" style="display: flex; align-items: center; justify-content: center; background: rgba(100, 80, 0, 0.2); border: 1px solid rgba(255, 215, 0, 0.3); border-radius: 4px; font-size: 11px; color: #ffd700;"></div>
             </div>
             
             <!-- 底部：获得积分 + 筹码选择 + 用户资产 -->
