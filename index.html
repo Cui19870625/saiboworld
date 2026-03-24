@@ -22942,8 +22942,13 @@
         window.doSupabaseLogin = async function(username, password) {
             try {
                 // 初始化 Supabase 客户端
-                if (!supabaseClient) {
+                if (!supabaseClient && typeof supabase !== 'undefined') {
                     supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+                }
+                
+                // 检查是否成功初始化
+                if (!supabaseClient) {
+                    throw new Error('网络连接失败，请刷新页面重试');
                 }
                 
                 // 使用邮箱格式登录（用户名 + @saiboworld.com）
@@ -23031,8 +23036,14 @@
         async function doSupabaseRegister(username, password) {
             try {
                 // 初始化 Supabase 客户端
-                if (!supabaseClient) {
+                if (!supabaseClient && typeof supabase !== 'undefined') {
                     supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+                }
+                
+                // 检查是否成功初始化
+                if (!supabaseClient) {
+                    alert('网络连接失败，请刷新页面重试');
+                    return;
                 }
                 
                 // 使用邮箱格式注册
@@ -23138,42 +23149,51 @@
         async function initAuth() {
             // 初始化 Supabase 客户端
             try {
-                supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+                if (typeof supabase !== 'undefined') {
+                    supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+                }
+                
+                // 检查是否成功初始化
+                if (!supabaseClient) {
+                    console.log('⚠️ Supabase未连接，使用本地模式');
+                }
                 
                 // 检查是否有保存的登录状态
                 const savedUser = localStorage.getItem('currentUser');
                 if (savedUser) {
                     currentUser = JSON.parse(savedUser);
                     
-                    // 检查 Supabase 会话
-                    const { data: { session } } = await supabaseClient.auth.getSession();
-                    
-                    if (session && session.user) {
-                        // 会话有效，自动登录
-                        onlinePlayerId = session.user.id;
-                        document.getElementById("loginModal").style.display = 'none';
+                    // 检查 Supabase 会话（仅在客户端已初始化时）
+                    if (supabaseClient) {
+                        const { data: { session } } = await supabaseClient.auth.getSession();
                         
-                        // 初始化游戏
-                        loadGameData();
-                        await loadUserCloudSave();
-                        checkOfflineRewards();
-                        initDeathSystem();
-                        initActivitySystem();
-                        initArenaData();
-                        checkDailyArenaReward();
-                        renderPlayerList();
-                        renderInitialMessages();
-                        updatePlayerInfo();
-                        checkNewUserGiftStatus();
-                        checkSignInStatus();
-                        initOnlinePlayers();
-                        initCloudSave();
-                        
-                        setTimeout(() => {
-                            addChatMessage('top', getTime(), '系统', '系统', '💡 发送口令【玄铁降临】【神兵强化】【赛博世界无敌】【挂机暴富】可领取福利（每日一次）');
-                        }, 2000);
-                        
-                        return true;
+                        if (session && session.user) {
+                            // 会话有效，自动登录
+                            onlinePlayerId = session.user.id;
+                            document.getElementById("loginModal").style.display = 'none';
+                            
+                            // 初始化游戏
+                            loadGameData();
+                            await loadUserCloudSave();
+                            checkOfflineRewards();
+                            initDeathSystem();
+                            initActivitySystem();
+                            initArenaData();
+                            checkDailyArenaReward();
+                            renderPlayerList();
+                            renderInitialMessages();
+                            updatePlayerInfo();
+                            checkNewUserGiftStatus();
+                            checkSignInStatus();
+                            initOnlinePlayers();
+                            initCloudSave();
+                            
+                            setTimeout(() => {
+                                addChatMessage('top', getTime(), '系统', '系统', '💡 发送口令【玄铁降临】【神兵强化】【赛博世界无敌】【挂机暴富】可领取福利（每日一次）');
+                            }, 2000);
+                            
+                            return true;
+                        }
                     }
                 }
             } catch (e) {
@@ -23566,7 +23586,7 @@
         // 初始化在线玩家系统
         function initOnlinePlayers() {
             try {
-                if (!supabaseClient) {
+                if (!supabaseClient && typeof supabase !== 'undefined') {
                     supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
                 }
                 
@@ -25584,6 +25604,10 @@
             // 确保 Supabase 客户端已初始化
             if (!supabaseClient) {
                 try {
+                    if (typeof supabase === 'undefined') {
+                        console.log('⚠️ Supabase SDK未加载，聊天系统使用本地模式');
+                        return;
+                    }
                     supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
                         realtime: {
                             params: {
