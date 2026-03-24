@@ -30137,8 +30137,11 @@
                                 }
                                 
                                 // 更新界面
-                                if (typeof renderFBHistory === 'function') {
-                                    renderFBHistory();
+                                if (typeof renderFBHistoryList === 'function') {
+                                    renderFBHistoryList();
+                                }
+                                if (typeof renderFBHistoryRope === 'function') {
+                                    renderFBHistoryRope();
                                 }
                             }
                         }
@@ -31168,32 +31171,7 @@
         // 挂载到 window 对象
         window.fbClearBets = fbClearBets;
         
-        // 显示规则
-        function fbShowRules() {
-            alert(`【飞禽走兽 - 文创娱乐版】
-
-🎮 游戏规则：
-1. 选择筹码金额（100/1K/1W/10W/100W）
-2. 点击动物卡片进行押注
-3. 15秒倒计时结束后自动封盘开奖
-
-💰 倍率说明：
-• 飞禽区：燕子×6、鸽子×8、孔雀×8、老鹰×12、鲨鱼×24
-• 走兽区：兔子×6、猴子×8、熊猫×8、狮子×12
-• 大区押注（飞禽/走兽）：×2
-
-🎁 特殊玩法：
-• 通赔（熊猫）：开奖后押注全赢
-• 通杀（猴子/炸弹）：开奖后押注全输
-
-⚠️ 注意事项：
-• 单局押注上限：10,000,000银币
-• 每日押注上限：100,000,000银币
-• 中奖扣除10%手续费
-• 禁止套利行为
-
-本游戏为文创娱乐玩法，禁止现金交易！`);
-        }
+        // fbShowRules 已在下方定义（使用更详细的 HTML 弹窗版本）
         
         // 存款（提示功能）
         function fbDeposit() {
@@ -31771,57 +31749,6 @@
                 console.log('🎰 手动模式：执行完整结算');
                 fbShowResult(result);
             }
-        }
-        
-        // 开始转动（旧版转盘动画，保留备用）
-        function fbStartSpin() {
-            fbState.isSpinning = true;
-            fbState.phase = 'result';
-            updateFBPhaseDisplay();
-            
-            // 显示转盘
-            const wheelOverlay = document.getElementById('fbWheelOverlay');
-            if (wheelOverlay) {
-                wheelOverlay.classList.add('active');
-            }
-            
-            // 渲染转盘
-            renderFBWheel();
-            
-            // 执行开奖算法
-            const result = fbDrawResult();
-            
-            // 转动动画
-            const wheel = document.getElementById('fbWheelRing');
-            const itemCount = 12; // 8动物 + 金鲨 + 银鲨 + 超级鳌鱼 + 炸弹
-            
-            // 计算目标角度
-            let targetIndex;
-            if (result.type === 'animal') {
-                targetIndex = FB_CONFIG.animals.findIndex(a => a.id === result.id);
-            } else if (result.type === 'gold_shark') {
-                targetIndex = 8;
-            } else if (result.type === 'silver_shark') {
-                targetIndex = 9;
-            } else if (result.type === 'mega_shark') {
-                targetIndex = 10;
-            } else if (result.type === 'bomb') {
-                targetIndex = 11;
-            } else {
-                targetIndex = 0;
-            }
-            
-            const anglePerItem = 360 / itemCount;
-            const targetAngle = targetIndex * anglePerItem;
-            const spins = 5 + Math.floor(Math.random() * 3);
-            const totalAngle = spins * 360 + (360 - targetAngle);
-            
-            wheel.style.transition = 'transform 5s cubic-bezier(0.17, 0.67, 0.12, 0.99)';
-            wheel.style.transform = `rotate(${totalAngle}deg)`;
-            
-            setTimeout(() => {
-                fbShowResult(result);
-            }, 5200);
         }
         
         // 开奖算法
@@ -32623,19 +32550,7 @@
         }
         
         // 更新大区押注显示
-        function updateFBZoneDisplay(zone) {
-            const zoneEl = document.getElementById(`fb-zone-${zone}`);
-            if (!zoneEl) return;
-            
-            const betAmount = fbState.bets
-                .filter(b => b.target === zone)
-                .reduce((sum, b) => sum + b.amount, 0);
-            
-            const betDisplayEl = zoneEl.querySelector('.zone-bet');
-            if (betDisplayEl) {
-                betDisplayEl.textContent = betAmount > 0 ? `已押 ${betAmount}` : '';
-            }
-        }
+        // updateFBZoneDisplay 已在上方定义（第32416行），此处删除重复定义
         
         // 获取押注目标名称
         function getFBTargetName(target) {
