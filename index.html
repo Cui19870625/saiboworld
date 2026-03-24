@@ -24615,6 +24615,12 @@
             fbState.lastWin = totalWin - fbState.totalBet;
             fbState.lastResult = result;
             
+            // 保存当前押注到 lastBets（用于续投功能）
+            if (betsToProcess && betsToProcess.length > 0) {
+                fbState.lastBets = [...betsToProcess];
+                console.log('🎰 保存上局押注到 lastBets:', fbState.lastBets.length, '条');
+            }
+            
             // 添加到历史记录
             const historyItem = {
                 round: roundNumber,
@@ -24728,6 +24734,12 @@
             const netProfit = totalWin - fbState.totalBet;
             fbState.lastWin = netProfit;
             fbState.lastResult = result;
+            
+            // 保存当前押注到 lastBets（用于续投功能）
+            if (betsToProcess && betsToProcess.length > 0) {
+                fbState.lastBets = [...betsToProcess];
+                console.log('🎰 保存上局押注到 lastBets:', fbState.lastBets.length, '条');
+            }
             
             // 更新商家累计统计
             const stats = fbState.houseStats;
